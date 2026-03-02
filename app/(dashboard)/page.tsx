@@ -113,6 +113,12 @@ export default function WorklistPage() {
     listRequests().then(setAllItems);
   }, []);
 
+  useEffect(() => {
+    const handler = () => listRequests().then(setAllItems);
+    window.addEventListener("chat-data-changed", handler);
+    return () => window.removeEventListener("chat-data-changed", handler);
+  }, []);
+
   const filteredItems = useMemo(
     () => applyFilters(allItems, filters),
     [allItems, filters],

@@ -165,7 +165,7 @@ export default function RequestDetailPage({
   const [runEvents, setRunEvents] = useState<KognitosRunEvent[]>([]);
   const [traceExpanded, setTraceExpanded] = useState(true);
 
-  useEffect(() => {
+  function refreshRequest() {
     getRequestById(id).then((r) => {
       if (!r) {
         setNotFound(true);
@@ -183,6 +183,16 @@ export default function RequestDetailPage({
     getDocumentsForRequest(id).then(setDocuments);
     getCommentsForRequest(id).then(setComments);
     getAuditEventsForRequest(id).then(setAuditEvents);
+  }
+
+  useEffect(() => {
+    refreshRequest();
+  }, [id]);
+
+  useEffect(() => {
+    const handler = () => refreshRequest();
+    window.addEventListener("chat-data-changed", handler);
+    return () => window.removeEventListener("chat-data-changed", handler);
   }, [id]);
 
   useEffect(() => {

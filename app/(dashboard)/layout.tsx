@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 import { canAccessPath, getDefaultPath } from "@/lib/role-permissions";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
+import { ChatPanel } from "@/components/ui/chat-panel";
 
 export default function DashboardLayout({
   children,
@@ -41,6 +42,7 @@ export default function DashboardLayout({
         <Topbar />
         <main className="p-4 lg:p-6">{children}</main>
       </div>
+      <ChatPanel />
     </div>
   );
 }

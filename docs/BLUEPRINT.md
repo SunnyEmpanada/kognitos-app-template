@@ -21,6 +21,7 @@ A complete set of instructions for building a domain-specific workflow applicati
 13. [Phase 9: Advanced Features](#13-phase-9-advanced-features)
 14. [Conventions & Patterns Reference](#14-conventions--patterns-reference)
 15. [Build Checklist](#15-build-checklist)
+16. [Acceptance Testing](#16-acceptance-testing)
 
 ---
 
@@ -36,23 +37,41 @@ The system has three layers:
 
 ### Key Principle
 
-The presentation layer calls Kognitos SOPs via API to execute business logic and reads/writes data tables via SQL queries. Business rules live in the SOPs, not in TypeScript. The app is a workflow orchestrator and data viewer, not a rules engine.
+The presentation layer calls Kognitos SOPs via API to execute business logic and reads data tables via SQL queries. Business rules live in the SOPs, not in TypeScript. The app is a workflow orchestrator and data viewer, not a rules engine.
+
+**Critical — all write operations must persist to the database.** A user action that only updates React state (`setEntity(...)`) without writing to Supabase is a bug. Navigate away and all progress is lost. Every action button must trigger either a Kognitos SOP run or a direct Supabase write.
+
+### Hybrid Write Architecture
+
+Write operations use a **hybrid pattern** — the choice depends on whether the action involves business logic:
+
+| Category | Route | When to use | Examples |
+|----------|-------|-------------|----------|
+| **SOP-routed** | `createRun(sopId, inputs)` | Action involves business logic, validation, AI, cross-system orchestration, or regulatory tracking | Auto-process entity, accept/submit outputs, audit, finalize |
+| **Direct CRUD** | `updateEntity()` + `insertAuditEvent()` | Simple state transition or data mutation with no business rules | Assign user, start manual review, resolve query, create entity |
+
+Both categories **must** create an audit event in Supabase for traceability. The difference is whether the business logic execution layer is Kognitos or a simple TypeScript function.
 
 ```
-┌─────────────────────────────────────────────────┐
-│                 Presentation Layer               │
-│          Next.js / Vercel / shadcn/ui            │
-│                                                  │
-│  Worklist ─ Detail ─ Dashboard ─ Rules ─ Settings│
-└──────────────┬─────────────────┬─────────────────┘
-               │ API calls       │ SQL queries
-               ▼                 ▼
-┌──────────────────────┐  ┌────────────────────────┐
-│   Kognitos Platform  │  │   Database (Supabase)  │
-│   English-as-Code    │  │   Domain tables         │
-│   SOPs & Runs        │  │   Metrics via SQL       │
-└──────────────────────┘  └────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                   Presentation Layer                     │
+│            Next.js / Vercel / shadcn/ui                  │
+│                                                          │
+│   Worklist ─ Detail ─ Dashboard ─ Rules ─ Settings       │
+└───────┬──────────────┬──────────────────┬────────────────┘
+        │ createRun()  │ updateEntity()   │ SQL queries
+        │ (complex)    │ (simple CRUD)    │ (reads)
+        ▼              ▼                  ▼
+┌────────────────┐  ┌──────────────────────────────────────┐
+│ Kognitos       │  │      Database (Supabase)              │
+│ English-as-Code│──│  Domain tables + audit_events         │
+│ SOPs & Runs    │  │  Metrics via SQL                      │
+└────────────────┘  └──────────────────────────────────────┘
 ```
+
+**SOP-routed writes**: The Kognitos SOP receives inputs, executes business logic, writes to Supabase as a side effect, and returns a completed Run with outputs. The UI calls `createRun()`, waits for completion, then re-fetches the entity from Supabase to reflect the new state.
+
+**Direct CRUD writes**: The UI calls `updateEntity()` to write to Supabase, then `insertAuditEvent()` to log the action, then re-fetches the entity. No Kognitos run is created.
 
 ### Supabase-First Data Layer
 
@@ -409,12 +428,32 @@ ALTER TABLE entities ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow public read" ON entities FOR SELECT USING (true);
 ```
 
+**Critical — RLS write policies:** The schema above enables RLS and creates `SELECT` policies, but the app also needs `INSERT` and `UPDATE` policies for every table it writes to. Without these, the anon key (used by the browser) is silently blocked from all writes — no error is thrown, the operation just returns empty results.
+
+Create a **separate migration file** (e.g., `00000000000001_write_policies.sql`) with write policies:
+
+```sql
+-- Allow anon writes for demo app (mock auth, no Supabase Auth)
+CREATE POLICY "Allow public insert" ON entities FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update" ON entities FOR UPDATE USING (true);
+
+CREATE POLICY "Allow public insert" ON audit_events FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update" ON audit_events FOR UPDATE USING (true);
+
+-- Repeat for every table the UI writes to (entities, audit_events, comments, notifications, etc.)
+```
+
+**Why this is easy to miss:** The seed script uses `SUPABASE_SERVICE_ROLE_KEY`, which bypasses RLS entirely. So seeding succeeds, reads work (SELECT policy exists), and the app looks correct — until you click an action button and the write silently fails. Always test writes with the anon key, not the service role key.
+
+**Migration file ordering:** Supabase applies migration files in filename sort order. Use zero-padded timestamp prefixes (e.g., `00000000000000_schema.sql`, `00000000000001_write_policies.sql`) to ensure the schema is created before policies reference its tables.
+
 **Schema guidelines:**
 - Use `text` primary keys matching the TypeScript `id` field
 - Use `jsonb` for flexible nested objects (e.g., `eligibility_status`, `criteria_summary`)
 - Add foreign key constraints for all relationships
 - Create indexes on frequently filtered columns (`status`, `payer_id`, `assigned_to`)
 - Enable Row Level Security on all tables
+- **Create INSERT and UPDATE policies for every table the app writes to** — not just SELECT
 
 ### 7.3 Create Seed Data (`lib/mock-data/` + `scripts/seed.ts`)
 
@@ -438,6 +477,16 @@ export const entities: DomainEntity[] = [
 - Every entity should have a `kognitos_run_id` linking to a mock run
 - Mock runs should have outputs that are consistent with the entity's database state
 - Include realistic dates, names, and values
+
+**Critical — ID consistency between `MOCK_USERS` and seed data:**
+
+The `MOCK_USERS` map in `lib/types.ts` (used by the auth context role switcher) and the `users` array in `lib/mock-data/` (used by `scripts/seed.ts`) **must use the same IDs, org_ids, and field values**. A mismatch causes silent failures across the entire app:
+- Notifications filtered by `user_id` return empty results
+- Comments and timeline events show "Unknown" instead of the author's name
+- Assigned-to lookups fail, breaking the entity detail page
+- New entity creation uses the wrong `org_id`, orphaning records
+
+**Rule:** Define user IDs in one place (seed data) and derive `MOCK_USERS` from the same source. After creating seed data, verify that every `user_id`, `org_id`, and `assigned_to` foreign key in every seed file matches an actual user/org record.
 
 ### 7.4 Database Seeder (`scripts/seed.ts`)
 
@@ -511,8 +560,56 @@ export async function getEntityById(id: string): Promise<DomainEntity | undefine
   return data as DomainEntity;
 }
 
-// ... similar functions for all entity types and relationships
+// ... similar read functions for all entity types and relationships
 ```
+
+### 7.7 Write Functions in `lib/db.ts`
+
+In addition to reads, `lib/db.ts` must expose write functions for every entity that the UI mutates. **Every action button in the app must call one of these** — never rely on React state alone for persistence.
+
+```typescript
+export async function updateEntity(
+  id: string,
+  updates: Partial<Omit<DomainEntity, "id">>
+): Promise<DomainEntity> {
+  const { data, error } = await sb()
+    .from("entities")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as DomainEntity;
+}
+
+export async function insertEntity(entity: DomainEntity): Promise<DomainEntity> {
+  const { data, error } = await sb()
+    .from("entities")
+    .insert(entity)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as DomainEntity;
+}
+
+export async function insertAuditEvent(event: {
+  id: string;
+  entity_id: string;
+  action: string;
+  actor_id: string | null;
+  details: Record<string, unknown>;
+}): Promise<AuditEvent> {
+  const { data, error } = await sb()
+    .from("audit_events")
+    .insert({ ...event, created_at: new Date().toISOString() })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as AuditEvent;
+}
+```
+
+**Critical rule**: If a page calls `setEntity(...)` to update local state after an action, it **must also** call `updateEntity()` (or `createRun()`) **before** or **alongside** the state update. State-only updates are ephemeral and lose all changes on navigation.
 
 **Important:** `lib/db.ts` does NOT import from `lib/mock-data/`. There is no fallback — if Supabase is not configured, functions throw. Mock data files are only used by the seed script and the auth context role switcher.
 
@@ -543,9 +640,16 @@ export async function getEntityById(id: string): Promise<DomainEntity | undefine
 Re-export everything so pages import from a single path:
 
 ```typescript
+// Reads
 export { listEntities, getEntityById, ... } from "./entities";
 export { listUsers, getUserById, getUserForRole } from "./users";
 export { queryInsights, queryMetrics, getRun, listRuns, getRunEvents } from "@/lib/kognitos";
+
+// Writes (direct CRUD)
+export { updateEntity, insertEntity, insertAuditEvent } from "./entities";
+
+// Writes (SOP-routed via Kognitos)
+export { createRun } from "@/lib/kognitos";
 ```
 
 **Rules:**
@@ -553,6 +657,7 @@ export { queryInsights, queryMetrics, getRun, listRuns, getRunEvents } from "@/l
 - All functions are async (return Promises) since they fetch from Supabase
 - No synchronous data accessors (e.g., no `getUserByIdSync`) — all lookups are async
 - The only exception: `getUserForRole()` uses the static `MOCK_USERS` map from `lib/mock-data` for the auth context role switcher
+- **Write functions must be exported alongside reads** — if a page can trigger an action, the corresponding write function must be available via `@/lib/api`
 
 ---
 
@@ -764,7 +869,43 @@ The most complex page. Structure:
 - **Letters**: Generated documents with regenerate/download
 - **SOP Run**: Kognitos run visibility (see Phase 7)
 
-**Action sidebar gating**: Each button wrapped in `canPerformAction(role, "action")`.
+**Status-aware action panel**: Actions must be gated by **both** the entity's current status **and** the user's role. A static list of buttons gated only by role creates dead ends where entities in certain statuses have no available actions (e.g., a newly created entity stuck at `draft` with no "Submit" button).
+
+Define a `STATUS_ACTIONS` constant mapping each status to its available actions:
+
+```typescript
+interface StatusAction {
+  key: string;           // action identifier (e.g., "submit", "run_auto_process")
+  label: string;         // button label
+  icon: LucideIcon;      // button icon
+  variant: "default" | "outline" | "destructive";
+  requiredActions: EntityAction[];  // RBAC actions the user's role must have
+}
+
+const STATUS_ACTIONS: Partial<Record<EntityStatus, StatusAction[]>> = {
+  draft: [
+    { key: "submit", label: "Submit", icon: Send, variant: "default", requiredActions: ["submit"] },
+    { key: "run_auto_process", label: "Run Auto-Process", icon: Zap, variant: "outline", requiredActions: ["submit"] },
+  ],
+  submitted: [
+    { key: "start_review", label: "Start Review", icon: Eye, variant: "default", requiredActions: ["assign"] },
+  ],
+  under_review: [
+    { key: "approve", label: "Approve", icon: Check, variant: "default", requiredActions: ["approve"] },
+    { key: "deny", label: "Deny", icon: X, variant: "destructive", requiredActions: ["deny"] },
+    { key: "send_query", label: "Send Query", icon: MessageSquare, variant: "outline", requiredActions: ["query"] },
+  ],
+  // ... map every non-terminal status
+};
+```
+
+At render time, filter `STATUS_ACTIONS[entity.status]` by the user's role using `canPerformAction`. For terminal statuses (e.g., `closed`, `finalized`), display a "No actions available" message. Show loading states during async action processing.
+
+**Key rules:**
+- Every non-terminal status must have at least one action defined
+- The initial status (the one entities are created with) must have actions that advance the workflow
+- Include Kognitos SOP trigger actions (e.g., "Run Auto-Process") where the business logic layer should be invoked
+- **Every action handler must persist to Supabase** — either via `createRun()` for SOP-routed actions or via `updateEntity()` + `insertAuditEvent()` for direct CRUD. After persistence, call a `refreshEntity()` helper that re-fetches the entity and audit events from Supabase to update local state. Never rely on `setEntity(...)` alone — state-only updates are lost on navigation.
 
 **URL deep-linking**: Read `useSearchParams().get("tab")` to set the default tab value, enabling `?tab=sop-run` links.
 
@@ -798,6 +939,65 @@ The most complex page. Structure:
 - List page: Cards per rule grouped by category with computed metrics (approval rate, hit rate, gap rate)
 - Detail page: Rule content with keyword highlighting, version history sidebar, metrics sidebar
 - **Run History** section below the rule content showing all Kognitos runs that used that rule, as an expandable table with inline input/output details
+
+**Rule criteria must be written in plain English with markdown formatting.** Kognitos is an "English as Code" platform — the rules displayed in the app should read like step-by-step instructions a human expert would follow, not like programming conditionals. This applies to both the seed data (`rules` table `criteria` field) and any future rule authoring UI.
+
+**Data format**: Store rule criteria as markdown text using `##` for the rule title, `###` for step headings, `-` for bullet lists, `  -` for nested sub-bullets, and numbered lists (`1.`, `2.`) where order matters:
+
+```markdown
+## Rule Title
+
+### Step 1: Verify Requirement
+- Check condition A
+- Check condition B
+
+### Step 2: Eligibility Check
+Approval criteria (must meet at least ONE):
+- Criterion with detail
+- Another criterion
+  - Sub-detail or nested requirement
+  - Another sub-detail
+
+### Step 3: Resolve
+If criteria met: accept.
+If criteria not met: flag for review.
+
+### Exception
+- Edge case that overrides the normal flow
+```
+
+**Rendering**: Do NOT render criteria as a raw `<pre>` block or with monospace font. Instead, build a `renderCriteria()` function that parses the markdown line-by-line into styled React elements:
+
+```typescript
+function renderCriteria(content: string) {
+  const lines = content.split("\n");
+  return lines.map((line, i) => {
+    if (line.startsWith("##")) {
+      // ## → <h2>, ### → <h3>
+    }
+    if (line.startsWith("  - ")) {
+      // nested bullet → indented dot + text
+    }
+    if (line.startsWith("- ")) {
+      // top-level bullet → dot + text
+    }
+    if (line.match(/^\d+\.\s/)) {
+      // numbered list → padded paragraph
+    }
+    // keyword highlighting: bold + blue for action verbs
+    // empty lines → spacer div
+    // default → <p> with text-sm
+  });
+}
+```
+
+Highlight domain-relevant action keywords (e.g., "Check", "Verify", "Confirm", "Review", "Flag", "Must", "Required") in **bold blue** to make the steps scannable.
+
+**Avoid:**
+- Pseudocode syntax (`IF x THEN y`, `AND`, `OR`, function calls like `flag_for_review()`)
+- Long run-on sentences — break into short, scannable lines
+- Monospace / code font for criteria display
+- Raw `<pre>` or `whitespace-pre-wrap` rendering without parsing headings and bullets
 
 ### 10.7 Notifications
 
@@ -839,7 +1039,46 @@ export async function queryMetrics(options?: { metrics?: string[]; groupBy?: str
 export async function getAutomationRunAggregates(): Promise<...> { ... }
 ```
 
-### 11.2 Mock Run Data Consistency
+### 11.2 `createRun()` — SOP-Routed Writes
+
+For actions that involve business logic, the UI calls `createRun()` to execute a Kognitos SOP:
+
+```typescript
+/** Simulates POST /api/v1/.../runs (execute SOP) */
+export async function createRun(
+  sopId: string,
+  userInputs: Record<string, string>
+): Promise<KognitosRun> { ... }
+```
+
+The mock implementation dispatches to an executor function per SOP (e.g., `executeAutoCode`, `executeAudit`) that:
+1. Performs the business logic (AI suggestions, validation, etc.)
+2. Writes the result to Supabase via `updateEntity()` and `insertAuditEvent()`
+3. Returns a mock `KognitosRun` with `state: "completed"` and relevant `outputs`
+
+**Action → SOP mapping**: Define a `SOP_ACTION_MAP` constant that maps UI action keys to Kognitos SOP IDs. The entity detail page's `handleAction` function uses this map to decide whether an action is SOP-routed or direct CRUD:
+
+```typescript
+const SOP_ACTIONS = ["run_auto_process", "accept_outputs", "audit", "finalize"] as const;
+const SOP_ACTION_MAP: Record<string, string> = {
+  run_auto_process: "sop-auto-process",
+  accept_outputs: "sop-accept",
+  audit: "sop-audit",
+  finalize: "sop-finalize",
+};
+
+async function handleAction(action: string) {
+  if (action in SOP_ACTION_MAP) {
+    await createRun(SOP_ACTION_MAP[action], { entity_id: entity.id, ... });
+  } else {
+    await updateEntity(entity.id, { status: newStatus });
+    await insertAuditEvent({ ... });
+  }
+  await refreshEntity();
+}
+```
+
+### 11.3 Mock Run Data Consistency
 
 Every mock run's `state.completed.outputs` should match the corresponding entity's data in the database tables. This demonstrates that the SOP produced the outputs that were then stored in the database. For example:
 
@@ -856,7 +1095,7 @@ outputs: {
 { id: "entity-1", status: "approved", confidence_score: 82, auth_number: "AUTH-2026-001", kognitos_run_id: "run-1" }
 ```
 
-### 11.3 SOP Run Tab on Entity Detail Page
+### 11.4 SOP Run Tab on Entity Detail Page
 
 Add a tab that shows the Kognitos run for this entity:
 
@@ -869,7 +1108,7 @@ Add a tab that shows the Kognitos run for this entity:
    - SOP badges colored by phase name
    - Expandable JSON details per event
 
-### 11.4 Run History on Rule Detail Page
+### 11.5 Run History on Rule Detail Page
 
 Show all runs that used a specific rule:
 - Table with: Run ID, Entity Name, Key Code, Status, Confidence, Duration, Date
@@ -980,7 +1219,9 @@ const [expandedId, setExpandedId] = useState<string | null>(null);
 
 ### 13.3 Global Search
 
-Topbar search navigates to the worklist with a URL query param:
+Global search requires **two-sided wiring** — the topbar sends the query via URL, and the worklist page reads and applies it. Missing either side makes search appear broken.
+
+**Topbar side** — navigate to the worklist with a URL query param:
 
 ```typescript
 function handleSearchKeyDown(e: React.KeyboardEvent) {
@@ -990,7 +1231,22 @@ function handleSearchKeyDown(e: React.KeyboardEvent) {
 }
 ```
 
-The worklist reads `useSearchParams().get("search")` and applies it to filters.
+**Worklist side** — read `useSearchParams` and sync to local filter state:
+
+```typescript
+import { useSearchParams } from "next/navigation";
+
+const searchParams = useSearchParams();
+
+useEffect(() => {
+  const urlSearch = searchParams.get("search");
+  if (urlSearch) {
+    setFilters((prev) => ({ ...prev, search: urlSearch }));
+  }
+}, [searchParams]);
+```
+
+**Important:** Both sides must be implemented. The topbar navigation alone is not enough — the worklist page must explicitly read the URL parameter and update its local `filters` state, or the search term will be silently ignored.
 
 ### 13.4 CSV Export
 
@@ -1073,6 +1329,58 @@ Display as cards in the worklist page above the filter bar.
 5. Domain components
 6. Types (with `import type`)
 
+### Numeric Display Conventions
+
+Values stored in the database as 0–1 decimals (e.g., `confidence: 0.94`, `approval_rate: 0.78`) must be multiplied by 100 before display:
+
+```typescript
+// CORRECT
+`${Math.round(item.confidence * 100)}%`    // → "94%"
+
+// WRONG — displays "1%" for any value 0.5–1.0
+`${Math.round(item.confidence)}%`          // → "1%"
+```
+
+Establish a convention in `lib/utils.ts` for all percentage formatting:
+
+```typescript
+export function formatPct(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+```
+
+### TypeScript Tuple Narrowing
+
+When `domain.config.ts` defines a constant array with `as const` (e.g., `terminalStatuses: ["finalized"] as const`), TypeScript infers a readonly tuple type. Calling `.includes(variable)` where `variable` is the broader union type (e.g., `EntityStatus`) produces a type error because `includes` expects the narrow literal type.
+
+**Fix:** Cast the tuple to `readonly string[]` at the call site:
+
+```typescript
+const isTerminal = (DOMAIN.terminalStatuses as readonly string[]).includes(entity.status);
+```
+
+### Rule / SOP Criteria Language
+
+Rule criteria stored in the database and displayed in the Rules browser must be written in **plain English with markdown formatting**, not pseudocode or programming syntax. Kognitos is an "English as Code" platform — the rules should read like step-by-step instructions a domain expert would follow.
+
+| Do | Don't |
+|----|-------|
+| `## Rule Title` / `### Step 1: Check ...` | No headings — wall of text |
+| `- Check whether the request amount exceeds threshold` | `IF amount > threshold THEN ...` |
+| `- Flag any category marked as high-risk` | `IF category IN ('high_risk') THEN flag` |
+| `If documentation supports: approve it.` | `THEN flag_for_review('Check eligibility')` |
+| Parsed with `renderCriteria()` into headings + bullets | Raw `<pre>` with `font-mono` |
+
+Use `##`/`###` headings for structure, `-` bullets for lists, `  -` for nested sub-bullets, and numbered lists where order matters. Render with a line-by-line markdown parser (see Section 10.6), not `<pre>` or `whitespace-pre-wrap`.
+
+### New Entity Creation
+
+When a page creates a new entity client-side (e.g., a "New Case" dialog), ensure the default field values match the seed data conventions:
+- Use `user.org_id` from the auth context, not a hard-coded fallback
+- Set `status` to the initial lifecycle status defined in `domain.config.ts`
+- Generate a deterministic or UUID-based `id` following the same prefix pattern as seed data (e.g., `entity-{n}`)
+- Set `created_at` and `updated_at` to the current ISO timestamp
+
 ### Component Patterns
 
 - Pages are `"use client"` with `useState` + `useEffect` for data fetching
@@ -1090,10 +1398,19 @@ Display as cards in the worklist page above the filter bar.
 All data loading is async — no synchronous data accessors exist at runtime:
 
 ```
-Page (useEffect) → API function (async) → lib/db (async) → Supabase PostgreSQL
-Page (useEffect) → Query function (async) → lib/db (async) → Supabase PostgreSQL → JS compute
-Page (useEffect) → Kognitos client (async) → Mock JSON (dev) / Kognitos REST API (prod)
+Reads:
+  Page (useEffect) → API function (async) → lib/db (async) → Supabase PostgreSQL
+  Page (useEffect) → Query function (async) → lib/db (async) → Supabase PostgreSQL → JS compute
+  Page (useEffect) → Kognitos client (async) → Mock JSON (dev) / Kognitos REST API (prod)
+
+Writes (SOP-routed):
+  Action button → createRun(sopId, inputs) → Kognitos SOP → writes to Supabase → refreshEntity()
+
+Writes (Direct CRUD):
+  Action button → updateEntity() + insertAuditEvent() → Supabase → refreshEntity()
 ```
+
+**Anti-pattern — state-only write**: `setEntity({...entity, status: "new_status"})` without a Supabase call. This "works" visually until the user navigates away or refreshes the page, at which point the change is silently lost. Every action must persist before or alongside the state update.
 
 **React hooks rule**: All `useEffect` and `useState` hooks for data loading must be declared **before** any conditional early returns (`if (!data) return null`). Placing a `useEffect` after an early return causes "Rendered more hooks than during the previous render" errors.
 
@@ -1135,10 +1452,14 @@ useEffect(() => { ... }, [data]);  // ← React error: hook count changes betwee
 - [ ] Write and run `scripts/seed.ts` to populate Supabase
 - [ ] Create `lib/supabase.ts` (client from env vars)
 - [ ] Create `lib/db.ts` (async data-access layer, Supabase-only, no mock fallback)
+- [ ] Add write functions to `lib/db.ts` (`updateEntity`, `insertEntity`, `insertAuditEvent`)
+- [ ] Verify `MOCK_USERS` IDs and `org_id` match seed data exactly (no `usr_001` vs `user-1` mismatches)
 
 ### API & Auth
 - [ ] Create API abstraction layer (`lib/api/`)
-- [ ] Create Kognitos mock client (`lib/kognitos/client.ts`)
+- [ ] Export both read **and** write functions from `lib/api/index.ts`
+- [ ] Create Kognitos mock client (`lib/kognitos/client.ts`) with `createRun()` for SOP-routed writes
+- [ ] Define `SOP_ACTION_MAP` mapping UI action keys → Kognitos SOP IDs
 - [ ] Create auth context with localStorage persistence
 - [ ] Create role permissions config
 - [ ] Create constants (role labels, status labels)
@@ -1171,14 +1492,62 @@ useEffect(() => { ... }, [data]);  // ← React error: hook count changes betwee
 - [ ] Login redirects to role-specific default page
 - [ ] Page-level access guard in dashboard layout
 - [ ] Action-level gating on entity detail page
-- [ ] Role-specific worklist (e.g., physician sees only pending queries)
+- [ ] Role-specific worklist (e.g., reviewer sees only items pending their action)
 - [ ] Role-aware dashboard (section ordering/visibility)
 
 ### Deployment
-- [ ] Set Vercel env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- [ ] Pull env vars locally: `vercel env pull .env.local`
-- [ ] Deploy to Vercel: `vercel --prod`
+
+**Git setup (template origin trap):** When building from the template, the git `origin` remote still points to `kognitos/kognitos-trusted-app-template`. You must create your own repo and change the remote before pushing:
+
+```bash
+# Create new repo (e.g., under your org)
+gh repo create YOUR_ORG/your-app-name --public --description "..."
+
+# Point origin to the new repo (NOT the template)
+git remote set-url origin https://github.com/YOUR_ORG/your-app-name.git
+git push -u origin main
+```
+
+**Vercel + Supabase deployment:**
+
+- [ ] Create a GitHub repo for the app (separate from the template repo)
+- [ ] Change git `origin` remote to the new repo and push
+- [ ] Link the Vercel project to the correct team/scope: `vercel link --scope YOUR_TEAM`
+- [ ] Set Supabase env vars on Vercel **before the first production deploy** (without them the build succeeds but the app shows blank pages at runtime):
+  ```bash
+  echo "https://YOUR_PROJECT.supabase.co" | vercel env add NEXT_PUBLIC_SUPABASE_URL production
+  echo "your-anon-key" | vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production
+  ```
+- [ ] Pull env vars locally for development: `vercel env pull .env.local`
+- [ ] Push the Supabase schema: `supabase db push` (both schema and write policy migrations)
+- [ ] Seed the database: `SUPABASE_SERVICE_ROLE_KEY=... npx tsx scripts/seed.ts`
+- [ ] Deploy to Vercel: `vercel --prod --scope YOUR_TEAM`
 - [ ] Verify all pages load data from Supabase (no console errors)
+- [ ] Verify writes work: perform an action, refresh the page, confirm the change persisted
+
+### Write Persistence (Critical)
+- [ ] Every action button in the entity detail page calls either `createRun()` or `updateEntity()` + `insertAuditEvent()` — no state-only updates
+- [ ] SOP-routed actions (complex business logic) go through `createRun()` which writes to Supabase internally
+- [ ] Direct CRUD actions (simple transitions) call `updateEntity()` then `insertAuditEvent()`
+- [ ] After every write (both SOP and CRUD), a `refreshEntity()` helper re-fetches the entity from Supabase to update local state
+- [ ] New entity creation via dialog calls `insertEntity()` + `insertAuditEvent()` to persist
+- [ ] Audit events are created for **every** action (both SOP-routed and direct CRUD)
+- [ ] Test persistence: perform an action, navigate away, navigate back — the change must survive
+- [ ] Supabase write policies exist for all tables the UI writes to (`supabase/migrations/`)
+
+### Verification
+- [ ] Every non-terminal status has at least one action in the status-aware action panel
+- [ ] The initial entity status has actions to advance the workflow (no dead-end on creation)
+- [ ] Status-aware actions are gated by both entity status AND user role
+- [ ] Kognitos SOP trigger actions (e.g., "Run Auto-Process") simulate processing with loading states
+- [ ] Global search works end-to-end: topbar sends URL param, worklist reads and applies it
+- [ ] All 0–1 decimal values (confidence, rates) are multiplied by 100 before display
+- [ ] Notifications filter correctly by the logged-in user's ID
+- [ ] Comments and timeline events display the correct author name (not "Unknown")
+- [ ] New entity creation uses `user.org_id` from auth context, not a hard-coded fallback
+- [ ] `MOCK_USERS` IDs, org_ids, and roles match seed data in `lib/mock-data/`
+- [ ] Rule criteria stored as markdown (## headings, ### steps, - bullets, numbered lists) in plain English — no pseudocode
+- [ ] Rule criteria rendered via a `renderCriteria()` parser into headings, bullets, and keyword-highlighted text — not raw `<pre>` or `font-mono`
 
 ### Polish
 - [ ] Interactive drill-down on all dashboard visualizations
@@ -1190,3 +1559,127 @@ useEffect(() => { ... }, [data]);  // ← React error: hook count changes betwee
 - [ ] All TypeScript compiles cleanly
 - [ ] No lint errors
 - [ ] Git init and commit
+
+### Acceptance Testing
+- [ ] Generate test matrix from domain config (see [Section 16](#16-acceptance-testing))
+- [ ] Run every test case — every action writes to Supabase and creates an audit event
+- [ ] Verify all changes survive a full page reload
+- [ ] Test across all roles defined in `DOMAIN.roles`
+
+---
+
+## 16. Acceptance Testing
+
+After deployment, generate and execute a full acceptance test suite that verifies every user-facing action creates persistent updates in Supabase. Do not rely on manual spot-checks — systematically test every action in the app.
+
+### 16.1 Generate the Test Matrix
+
+Derive the test matrix automatically from the app's domain config and action definitions. The inputs are:
+
+1. **`STATUS_ACTIONS`** (from the entity detail page) — maps each status to available action buttons
+2. **`SOP_ACTIONS` / `SOP_ACTION_MAP`** — which actions route through Kognitos vs direct CRUD
+3. **`DOMAIN.roles`** — which roles can perform which actions
+4. **`DOMAIN.statuses`** — the full lifecycle
+
+For each combination of (status × action × role), generate a row:
+
+```
+| # | Action           | Test Entity | Before Status  | Expected After | Role    | DB Table(s)            | Audit Event Action |
+|---|------------------|-------------|----------------|----------------|---------|------------------------|--------------------|
+| 1 | Create Entity    | new         | —              | draft          | requester | entities, audit_events | entity_created     |
+| 2 | Submit           | ent-1       | draft          | submitted      | requester | entities, audit_events | submitted          |
+| 3 | Start Review     | ent-2       | submitted      | under_review   | reviewer  | entities, audit_events | review_started     |
+| 4 | Approve          | ent-3       | under_review   | approved       | reviewer  | entities, audit_events | approved           |
+| 5 | Reject           | ent-4       | under_review   | rejected       | reviewer  | entities, audit_events | rejected           |
+| 6 | Request Changes  | ent-5       | under_review   | draft          | reviewer  | entities, audit_events | changes_requested  |
+| 7 | Close            | ent-6       | approved       | closed         | manager   | entities, audit_events | closed             |
+| 8 | Assign           | ent-7       | submitted      | (assigned_to)  | manager   | entities, audit_events | assigned           |
+```
+
+**Key rules:**
+- Every row must name a specific test entity in the correct "Before Status" (use seed data entities or create new ones)
+- Every action must be tested with the role that has permission for it
+- The terminal status should have no action rows (verify "no further actions" message instead)
+
+### 16.2 Pre-Test: Snapshot the Database
+
+Before running tests, capture a baseline of the database state:
+
+```bash
+# Snapshot all entity statuses
+curl -s "$SUPABASE_URL/rest/v1/entities?select=id,status,assigned_to&order=id" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY"
+
+# Count existing audit events
+curl -s "$SUPABASE_URL/rest/v1/audit_events?select=id&order=created_at.desc&limit=5" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY"
+```
+
+### 16.3 Execute Tests
+
+For each row in the test matrix, follow this protocol:
+
+**Step 1: Login as the required role**
+Navigate to `/login`, select the role, sign in.
+
+**Step 2: Navigate to the test entity**
+Go to `/entities/{id}` and verify the current status matches "Before Status".
+
+**Step 3: Click the action button**
+Click the action, wait for "Processing..." to disappear and the UI to update.
+
+**Step 4: Verify in the UI**
+- Status badge changed to "Expected After"
+- Action buttons changed to match the new status
+- For SOP-routed actions: "SOP Run" tab appeared
+
+**Step 5: Verify in Supabase (the critical step)**
+Query the database directly to confirm the write persisted:
+
+```bash
+# Check entity status
+curl -s "$SUPABASE_URL/rest/v1/entities?id=eq.$ENTITY_ID&select=id,status,assigned_to,coded_at,finalized_at" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY"
+
+# Check audit event was created
+curl -s "$SUPABASE_URL/rest/v1/audit_events?entity_id=eq.$ENTITY_ID&select=id,action,actor_id&order=created_at.desc&limit=1" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY"
+```
+
+**Step 6: Reload and re-verify**
+Reload the page. The status and data must match what was set in Step 4. If it reverts, the write failed silently.
+
+### 16.4 Post-Test: Verify Audit Trail Completeness
+
+After all tests, query the audit_events table to confirm one event per test action:
+
+```bash
+# All audit events created during the test session (filter by timestamp)
+curl -s "$SUPABASE_URL/rest/v1/audit_events?created_at=gte.$TEST_START_TIME&select=id,entity_id,action,actor_id&order=created_at" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY"
+```
+
+Expected: one audit event per test row, each with the correct `entity_id`, `action`, and `actor_id`.
+
+### 16.5 What to Test Beyond Actions
+
+| Area | What to verify |
+|------|----------------|
+| **Create entity** | New entity dialog inserts a row in `entities` + `audit_events` |
+| **Role gating** | Actions that require a specific role do NOT appear for other roles |
+| **Terminal status** | Finalized entities show "no further actions" message |
+| **Cross-role flow** | Walk one entity through the full lifecycle: requester → reviewer → manager |
+| **Page reload** | Every change survives a full browser reload (not just client navigation) |
+| **Topbar search** | Search from topbar filters the worklist correctly |
+| **Notifications** | Notifications filter by the logged-in user |
+
+### 16.6 Common Failures and Root Causes
+
+| Symptom | Root cause | Fix |
+|---------|-----------|-----|
+| Action completes in UI but reverts on reload | State-only update, no Supabase write | Add `updateEntity()` + `insertAuditEvent()` call |
+| Write silently fails (no error, no change) | Missing RLS write policy on the table | Add INSERT/UPDATE policies in a migration file |
+| Audit event missing for an action | `insertAuditEvent()` call missing from handler | Add it after every `updateEntity()` or `createRun()` |
+| Wrong actor_id on audit event | Using hard-coded user ID instead of `user?.id` | Pass `user?.id` from auth context |
+| Status changes but related fields don't | `updateEntity` call missing fields like `coded_at` | Include all relevant fields in the update payload |
+| Assign action does nothing | `prompt()` returns empty string in some browsers | Use a dialog/modal instead of `prompt()` for user input |

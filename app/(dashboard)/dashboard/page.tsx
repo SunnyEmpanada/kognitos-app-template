@@ -220,7 +220,7 @@ export default function DashboardPage() {
     items: Request[];
   } | null>(null);
 
-  useEffect(() => {
+  function loadDashboardData() {
     Promise.all([
       listRequests(),
       queryAvgTimeToDecision(),
@@ -251,6 +251,16 @@ export default function DashboardPage() {
         setMetrics(metricRes.results);
       },
     );
+  }
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  useEffect(() => {
+    const handler = () => loadDashboardData();
+    window.addEventListener("chat-data-changed", handler);
+    return () => window.removeEventListener("chat-data-changed", handler);
   }, []);
 
   const totalMoneySaved = insights
