@@ -18,6 +18,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { MobileSidebar } from "./sidebar";
 
 function getInitials(name: string) {
@@ -61,81 +67,91 @@ export function Topbar() {
   const roleConfig = user ? getRoleConfig(user.role) : undefined;
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b bg-background/95 px-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60 lg:px-6">
-      <MobileSidebar />
+    <TooltipProvider>
+      <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b bg-background/95 px-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60 lg:px-6">
+        <MobileSidebar />
 
-      <div className="hidden text-sm font-medium text-muted-foreground lg:block">
-        {DOMAIN.appDescription}
-      </div>
-
-      <div className="ml-auto flex items-center gap-2">
-        <div className="relative hidden md:block">
-          <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder={`Search ${DOMAIN.entity.plural.toLowerCase()}…`}
-            className="w-56 pl-9 h-9"
-            value={searchValue}
-            onChange={(e) => setSearchValue(e.target.value)}
-            onKeyDown={handleSearchKeyDown}
-          />
+        <div className="flex-1 flex items-center justify-center lg:justify-start">
+          <div className="relative w-full max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder={`Search ${DOMAIN.entity.plural.toLowerCase()}…`}
+              className="w-full pl-9 h-9"
+              value={searchValue}
+              onChange={(e) => setSearchValue(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
+            />
+          </div>
         </div>
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className="relative"
-          onClick={() => router.push("/notifications")}
-        >
-          <Bell className="size-[18px]" />
-          {unreadCount > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 flex size-5 items-center justify-center rounded-full bg-destructive text-[10px] font-medium text-white">
-              {unreadCount}
-            </span>
-          )}
-          <span className="sr-only">Notifications</span>
-        </Button>
-
-        {user && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+        <div className="flex items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
               <Button
                 variant="ghost"
-                className="relative ml-1 flex items-center gap-2 px-2"
+                size="icon"
+                className="relative"
+                onClick={() => router.push("/notifications")}
               >
-                <Avatar className="size-8">
-                  <AvatarFallback className="bg-brand/20 text-xs font-medium">
-                    {getInitials(user.full_name)}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="hidden text-sm font-medium lg:inline-block">
-                  {user.full_name}
-                </span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel className="font-normal">
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium">{user.full_name}</p>
-                  <p className="text-xs text-muted-foreground">{user.email}</p>
-                  <Badge variant="outline" className="mt-1 w-fit text-[10px]">
-                    {roleConfig?.label ?? user.role}
+                <Bell className="size-[18px]" />
+                {unreadCount > 0 && (
+                  <Badge
+                    variant="destructive"
+                    className="absolute -right-0.5 -top-0.5 flex size-5 items-center justify-center rounded-full p-0 text-[10px] font-medium"
+                  >
+                    {unreadCount}
                   </Badge>
-                </div>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => router.push("/settings")}>
-                <UserIcon className="mr-2 size-4" />
-                Profile &amp; Settings
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout} variant="destructive">
-                <LogOut className="mr-2 size-4" />
-                Sign out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-      </div>
-    </header>
+                )}
+                <span className="sr-only">Notifications</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Notifications</TooltipContent>
+          </Tooltip>
+
+          {user && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="relative flex items-center gap-2 px-2"
+                >
+                  <Avatar className="size-8">
+                    <AvatarFallback className="bg-brand/20 text-xs font-medium">
+                      {getInitials(user.full_name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="hidden text-sm font-medium sm:inline-block">
+                    {user.full_name}
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium">{user.full_name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {user.email}
+                    </p>
+                    <Badge variant="outline" className="mt-1 w-fit text-[10px]">
+                      {roleConfig?.label ?? user.role}
+                    </Badge>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => router.push("/settings")}>
+                  <UserIcon className="mr-2 size-4" />
+                  Profile &amp; Settings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout} variant="destructive">
+                  <LogOut className="mr-2 size-4" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+      </header>
+    </TooltipProvider>
   );
 }

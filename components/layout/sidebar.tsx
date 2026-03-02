@@ -124,7 +124,7 @@ function SidebarNav() {
 
 export function Sidebar() {
   return (
-    <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:block lg:w-64">
+    <aside className="fixed left-0 top-0 z-30 hidden h-full w-64 lg:block">
       <SidebarNav />
     </aside>
   );

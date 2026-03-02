@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   useReactTable,
@@ -18,7 +19,7 @@ import { ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
 import type { Request, User } from "@/lib/types";
 import { DOMAIN } from "@/lib/domain.config";
 import { listUsers } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,13 +39,6 @@ import {
 } from "@/components/ui/select";
 import { StatusBadge } from "@/components/domain/status-badge";
 import { PriorityBadge } from "@/components/domain/priority-badge";
-
-const currencyFmt = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
-});
 
 function daysOpen(createdAt: string): number {
   return Math.floor(
@@ -81,7 +75,13 @@ function buildColumns(usersMap: Map<string, User>): ColumnDef<Request>[] {
       accessorKey: "title",
       header: "Title",
       cell: ({ row }) => (
-        <span className="font-medium">{row.getValue("title")}</span>
+        <Link
+          href={`/${DOMAIN.entitySlug}/${row.original.id}`}
+          className="font-medium hover:underline"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {row.getValue("title")}
+        </Link>
       ),
       enableSorting: true,
     },
@@ -94,13 +94,13 @@ function buildColumns(usersMap: Map<string, User>): ColumnDef<Request>[] {
       accessorKey: "status",
       header: "Status",
       cell: ({ row }) => <StatusBadge status={row.original.status} />,
-      enableSorting: false,
+      enableSorting: true,
     },
     {
       accessorKey: "priority",
       header: "Priority",
       cell: ({ row }) => <PriorityBadge priority={row.original.priority} />,
-      enableSorting: false,
+      enableSorting: true,
     },
     {
       id: "assigned_to",
@@ -117,7 +117,7 @@ function buildColumns(usersMap: Map<string, User>): ColumnDef<Request>[] {
       header: "Est. Value",
       cell: ({ row }) => (
         <span className="tabular-nums font-medium">
-          {currencyFmt.format(row.original.estimated_value)}
+          {formatCurrency(row.original.estimated_value)}
         </span>
       ),
       enableSorting: true,

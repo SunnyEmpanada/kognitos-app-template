@@ -2,8 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { ChatSession, ChatMessage, PendingWrite, ChatStreamEvent } from "./types";
-
-const MOCK_USER_ID = "user-1";
+import { useAuth } from "@/lib/auth-context";
 
 function generateId(prefix: string): string {
   const bytes = new Uint8Array(6);
@@ -13,6 +12,8 @@ function generateId(prefix: string): string {
 }
 
 export function useChat() {
+  const { user } = useAuth();
+  const userId = user?.id ?? "user-1";
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -21,14 +22,15 @@ export function useChat() {
   const [pendingWrite, setPendingWrite] = useState<PendingWrite | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Load sessions on mount
   useEffect(() => {
     loadSessions();
-  }, []);
+    setActiveSessionId(null);
+    setMessages([]);
+  }, [userId]);
 
   const loadSessions = useCallback(async () => {
     try {
-      const res = await fetch(`/api/chat/sessions?userId=${MOCK_USER_ID}`);
+      const res = await fetch(`/api/chat/sessions?userId=${userId}`);
       if (res.ok) {
         const data = await res.json();
         setSessions(data);
@@ -44,7 +46,7 @@ export function useChat() {
       const res = await fetch("/api/chat/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, userId: MOCK_USER_ID }),
+        body: JSON.stringify({ id, userId }),
       });
       if (res.ok) {
         const session = await res.json();
@@ -151,7 +153,7 @@ export function useChat() {
           body: JSON.stringify({
             sessionId,
             message: content,
-            userId: MOCK_USER_ID,
+            userId,
           }),
           signal: abortRef.current.signal,
         });
@@ -295,7 +297,7 @@ export function useChat() {
         body: JSON.stringify({
           sessionId: activeSessionId,
           message: "",
-          userId: MOCK_USER_ID,
+          userId,
           confirmWrite: {
             sql: pendingWrite.sql,
             description: pendingWrite.description,

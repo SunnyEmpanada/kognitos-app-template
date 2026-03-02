@@ -9,19 +9,22 @@ A complete set of instructions for building a domain-specific workflow applicati
 1. [Philosophy & Architecture](#1-philosophy--architecture)
 2. [Tech Stack](#2-tech-stack)
 3. [Project Structure](#3-project-structure)
-4. [Phase 0: Domain Analysis](#4-phase-0-domain-analysis)
-5. [Phase 1: Scaffold the Application](#5-phase-1-scaffold-the-application)
-6. [Phase 2: Design System](#6-phase-2-design-system)
-7. [Phase 3: Domain Types, Seed Data & Supabase Schema](#7-phase-3-domain-types-seed-data--supabase-schema)
-8. [Phase 4: API Abstraction Layer](#8-phase-4-api-abstraction-layer)
-9. [Phase 5: Authentication & RBAC](#9-phase-5-authentication--rbac)
-10. [Phase 6: Core Pages](#10-phase-6-core-pages)
-11. [Phase 7: Kognitos Integration](#11-phase-7-kognitos-integration)
-12. [Phase 8: Dynamic Metrics via SQL Queries](#12-phase-8-dynamic-metrics-via-sql-queries)
-13. [Phase 9: Advanced Features](#13-phase-9-advanced-features)
-14. [Conventions & Patterns Reference](#14-conventions--patterns-reference)
-15. [Build Checklist](#15-build-checklist)
-16. [Acceptance Testing](#16-acceptance-testing)
+4. [Phase 0: Market Research](#4-phase-0-market-research)
+5. [Phase 1: Domain Analysis](#5-phase-1-domain-analysis)
+6. [Phase 2: Scaffold the Application](#6-phase-2-scaffold-the-application)
+7. [Phase 3: Design System](#7-phase-3-design-system)
+8. [Phase 4: Domain Types, Seed Data & Supabase Schema](#8-phase-4-domain-types-seed-data--supabase-schema)
+9. [Phase 5: API Abstraction Layer](#9-phase-5-api-abstraction-layer)
+10. [Phase 6: Authentication & RBAC](#10-phase-6-authentication--rbac)
+11. [Phase 7: Core Pages](#11-phase-7-core-pages)
+12. [Phase 8: Kognitos Integration](#12-phase-8-kognitos-integration)
+13. [Phase 9: Write Operations Catalog & SOP Generation](#13-phase-9-write-operations-catalog--sop-generation)
+14. [Phase 10: Dynamic Metrics via SQL Queries](#14-phase-10-dynamic-metrics-via-sql-queries)
+15. [Phase 11: Advanced Features](#15-phase-11-advanced-features)
+16. [Conventions & Patterns Reference](#16-conventions--patterns-reference)
+17. [Build Checklist](#17-build-checklist)
+18. [User Stories](#18-user-stories)
+19. [Acceptance Testing](#19-acceptance-testing)
 
 ---
 
@@ -204,11 +207,90 @@ app-name/
 
 ---
 
-## 4. Phase 0: Domain Analysis
+## 4. Phase 0: Market Research
+
+Before writing any code or making domain decisions, research the target domain to ground all design choices in real-world data. This phase produces a research document that informs every subsequent phase.
+
+### 4.1 Industry Analysis
+
+Investigate the target domain's landscape:
+
+- **Market size and pain points**: What is the annual cost of the problem? What are the key inefficiencies in the current manual process? What is the rework cost per unit of work?
+- **Volume and scale**: How many entities flow through this process annually? What percentage fail or require rework? What is the average processing time?
+- **Trends**: Is the problem growing or shrinking? What regulatory or technological changes are affecting the space?
+
+**Output**: A paragraph summarizing the market opportunity with specific dollar figures and percentages.
+
+### 4.2 Competitor Landscape
+
+Research 4-6 key players in the space:
+
+- **For each competitor**: Name, product category, key features, differentiators, pricing model (if public)
+- **Table-stakes features**: What does every competitor offer? These are minimum requirements for the app.
+- **Differentiation opportunities**: What gaps exist? Where can Kognitos English-as-Code SOPs provide an advantage that competitors' hard-coded rule engines cannot?
+
+**Output**: A competitor matrix and a list of must-have vs. differentiating features.
+
+### 4.3 Regulatory & Compliance Context
+
+Identify the regulations that govern the domain:
+
+- **Data privacy**: What data protection requirements apply? (e.g., HIPAA for healthcare, SOX for finance)
+- **Audit requirements**: What level of traceability is mandated? This directly informs the audit_events table design.
+- **Process-specific regulations**: Are there mandated timelines, appeal levels, review processes, or reporting requirements?
+- **Jurisdictional variation**: Do rules differ by state, country, or payer/counterparty?
+
+**Output**: A list of regulatory constraints that must be reflected in the data model, status lifecycle, and audit trail.
+
+### 4.4 Deriving Domain Requirements
+
+Synthesize the research into concrete technical requirements:
+
+- **Entity lifecycle statuses**: Derived from the real-world process steps (not invented)
+- **Roles**: Derived from the actual job titles and responsibilities in the domain
+- **Categories/taxonomies**: Derived from industry-standard classifications
+- **Key metrics**: Derived from what practitioners actually measure and report on
+- **SOP candidates**: Derived from decision points where AI reading, reasoning, and writing can replace manual work
+- **Deadline/SLA requirements**: Derived from regulatory or contractual timelines
+
+**Output**: A structured requirements list that feeds directly into `lib/domain.config.ts` (Phase 2) and `lib/types.ts` (Phase 4).
+
+### 4.5 Research Document Template
+
+```markdown
+# [Domain] Market Research
+
+## Industry Context
+- Market size: $X annually
+- Key pain point: [description]
+- Rework cost: $X per unit
+- Failure/rework rate: X%
+
+## Competitor Landscape
+| Competitor | Category | Key Features | Differentiator |
+|------------|----------|-------------- |----------------|
+| [Name]     | [Type]   | [Features]   | [Differentiator] |
+
+## Regulatory Context
+- [Regulation 1]: [Impact on app design]
+- [Regulation 2]: [Impact on app design]
+
+## Derived Requirements
+- Statuses: [list]
+- Roles: [list]
+- Categories: [list]
+- SOPs: [list]
+- Key metrics: [list]
+- Deadlines/SLAs: [list]
+```
+
+---
+
+## 5. Phase 1: Domain Analysis
 
 Before writing any code, create three documents:
 
-### 4.1 Domain Process Map
+### 5.1 Domain Process Map
 
 Identify the core workflow of the domain. Map out:
 
@@ -217,7 +299,7 @@ Identify the core workflow of the domain. Map out:
 - **Decision points**: Where does business logic live? These become SOPs.
 - **External systems**: What integrations exist? (e.g., payer portals, EHR, HRIS)
 
-### 4.2 Business Logic PRD (BUSINESS_LOGIC.md)
+### 5.2 Business Logic PRD (BUSINESS_LOGIC.md)
 
 Define each SOP that will run on Kognitos:
 
@@ -237,7 +319,7 @@ Map SOPs to Kognitos concepts:
 - Human input needed → `awaitingGuidance` state
 - Metrics → Kognitos Dashboard & Analytics APIs
 
-### 4.3 Presentation PRD (PRESENTATION.md)
+### 5.3 Presentation PRD (PRESENTATION.md)
 
 Define the screens, their data sources, and their relationship to the SOPs:
 
@@ -250,23 +332,23 @@ Define the screens, their data sources, and their relationship to the SOPs:
 
 ---
 
-## 5. Phase 1: Scaffold the Application
+## 6. Phase 2: Scaffold the Application
 
-### 5.1 Create the Next.js App
+### 6.1 Create the Next.js App
 
 ```bash
 npx create-next-app@latest app-name --typescript --tailwind --eslint --app --src=false
 cd app-name
 ```
 
-### 5.2 Install Dependencies
+### 6.2 Install Dependencies
 
 ```bash
 npm install @tanstack/react-table recharts zustand date-fns lucide-react cmdk
 npx shadcn@latest init
 ```
 
-### 5.3 Install shadcn Components
+### 6.3 Install shadcn Components
 
 ```bash
 npx shadcn@latest add badge button card checkbox command dialog dropdown-menu \
@@ -274,19 +356,19 @@ npx shadcn@latest add badge button card checkbox command dialog dropdown-menu \
   textarea tooltip avatar
 ```
 
-### 5.4 Create Directory Structure
+### 6.4 Create Directory Structure
 
 Create the folder structure from Section 3. Set up route groups `(auth)` and `(dashboard)`.
 
 ---
 
-## 6. Phase 2: Design System
+## 7. Phase 3: Design System
 
-### 6.1 Custom Fonts
+### 7.1 Custom Fonts
 
 Place font files in `public/fonts/`. Add `@font-face` declarations in `globals.css`.
 
-### 6.2 Theme Tokens
+### 7.2 Theme Tokens
 
 In `globals.css`, define the theme using Tailwind v4's `@theme inline`:
 
@@ -317,7 +399,7 @@ In `globals.css`, define the theme using Tailwind v4's `@theme inline`:
 }
 ```
 
-### 6.3 Color Palette
+### 7.3 Color Palette
 
 Use OKLCH color space for perceptual uniformity. Define:
 - Brand color (primary actions, active states)
@@ -327,9 +409,9 @@ Use OKLCH color space for perceptual uniformity. Define:
 
 ---
 
-## 7. Phase 3: Domain Types, Seed Data & Supabase Schema
+## 8. Phase 4: Domain Types, Seed Data & Supabase Schema
 
-### 7.1 Define Types (`lib/types.ts`)
+### 8.1 Define Types (`lib/types.ts`)
 
 Start with the core domain entity and work outward:
 
@@ -401,7 +483,7 @@ export interface User {
 }
 ```
 
-### 7.2 Create Supabase Schema (`supabase/migrations/`)
+### 8.2 Create Supabase Schema (`supabase/migrations/`)
 
 Map every TypeScript type to a PostgreSQL table. Use `supabase db push` to apply:
 
@@ -455,7 +537,7 @@ CREATE POLICY "Allow public update" ON audit_events FOR UPDATE USING (true);
 - Enable Row Level Security on all tables
 - **Create INSERT and UPDATE policies for every table the app writes to** — not just SELECT
 
-### 7.3 Create Seed Data (`lib/mock-data/` + `scripts/seed.ts`)
+### 8.3 Create Seed Data (`lib/mock-data/` + `scripts/seed.ts`)
 
 Mock data files in `lib/mock-data/` serve as the **seed source**. For each entity type, create a `.ts` file exporting a typed array:
 
@@ -488,7 +570,7 @@ The `MOCK_USERS` map in `lib/types.ts` (used by the auth context role switcher) 
 
 **Rule:** Define user IDs in one place (seed data) and derive `MOCK_USERS` from the same source. After creating seed data, verify that every `user_id`, `org_id`, and `assigned_to` foreign key in every seed file matches an actual user/org record.
 
-### 7.4 Database Seeder (`scripts/seed.ts`)
+### 8.4 Database Seeder (`scripts/seed.ts`)
 
 A TypeScript script that upserts all mock data into Supabase using the service role key:
 
@@ -521,7 +603,7 @@ main().catch(console.error);
 
 Run with: `SUPABASE_SERVICE_ROLE_KEY=... npx tsx scripts/seed.ts`
 
-### 7.5 Supabase Client (`lib/supabase.ts`)
+### 8.5 Supabase Client (`lib/supabase.ts`)
 
 ```typescript
 import { createClient } from "@supabase/supabase-js";
@@ -535,7 +617,7 @@ export const supabase =
     : null;
 ```
 
-### 7.6 Data Access Layer (`lib/db.ts`)
+### 8.6 Data Access Layer (`lib/db.ts`)
 
 All runtime data reads go through this module. Every function calls Supabase directly:
 
@@ -563,7 +645,7 @@ export async function getEntityById(id: string): Promise<DomainEntity | undefine
 // ... similar read functions for all entity types and relationships
 ```
 
-### 7.7 Write Functions in `lib/db.ts`
+### 8.7 Write Functions in `lib/db.ts`
 
 In addition to reads, `lib/db.ts` must expose write functions for every entity that the UI mutates. **Every action button in the app must call one of these** — never rely on React state alone for persistence.
 
@@ -615,9 +697,9 @@ export async function insertAuditEvent(event: {
 
 ---
 
-## 8. Phase 4: API Abstraction Layer
+## 9. Phase 5: API Abstraction Layer
 
-### 8.1 API Module (`lib/api/`)
+### 9.1 API Module (`lib/api/`)
 
 Re-export `lib/db.ts` async functions. This keeps a clean import boundary for pages:
 
@@ -635,7 +717,7 @@ export async function getEntityById(id: string): Promise<DomainEntity | undefine
 }
 ```
 
-### 8.2 API Index (`lib/api/index.ts`)
+### 9.2 API Index (`lib/api/index.ts`)
 
 Re-export everything so pages import from a single path:
 
@@ -661,9 +743,9 @@ export { createRun } from "@/lib/kognitos";
 
 ---
 
-## 9. Phase 5: Authentication & RBAC
+## 10. Phase 6: Authentication & RBAC
 
-### 9.1 Auth Context (`lib/auth-context.tsx`)
+### 10.1 Auth Context (`lib/auth-context.tsx`)
 
 ```typescript
 "use client";
@@ -712,7 +794,7 @@ export function useAuth() {
 }
 ```
 
-### 9.2 Role Permissions (`lib/role-permissions.ts`)
+### 10.2 Role Permissions (`lib/role-permissions.ts`)
 
 Define a centralized config mapping each role to:
 - **allowedPaths**: Which sidebar nav items to show (and which pages to allow)
@@ -770,7 +852,7 @@ export function getDefaultPath(role: UserRole): string {
 }
 ```
 
-### 9.3 Where RBAC Is Enforced
+### 10.3 Where RBAC Is Enforced
 
 | Location | What it does |
 |----------|-------------|
@@ -783,15 +865,15 @@ export function getDefaultPath(role: UserRole): string {
 
 ---
 
-## 10. Phase 6: Core Pages
+## 11. Phase 7: Core Pages
 
-### 10.1 Login Page
+### 11.1 Login Page
 
 - Role selector dropdown (no real credentials for mock)
 - On submit: `login(role)` then `router.push(getDefaultPath(role))`
 - Styled as a centered card with the app logo
 
-### 10.2 Dashboard Layout (`app/(dashboard)/layout.tsx`)
+### 11.2 Dashboard Layout (`app/(dashboard)/layout.tsx`)
 
 ```typescript
 "use client";
@@ -819,7 +901,7 @@ export default function DashboardLayout({ children }) {
 }
 ```
 
-### 10.3 Worklist (Primary Screen)
+### 11.3 Worklist (Primary Screen)
 
 The worklist is the default page for most roles. It contains:
 
@@ -839,7 +921,7 @@ interface WorklistFilters {
 }
 ```
 
-### 10.4 Entity Detail (Tabbed)
+### 11.4 Entity Detail (Tabbed)
 
 The most complex page. Structure:
 
@@ -909,7 +991,7 @@ At render time, filter `STATUS_ACTIONS[entity.status]` by the user's role using 
 
 **URL deep-linking**: Read `useSearchParams().get("tab")` to set the default tab value, enabling `?tab=sop-run` links.
 
-### 10.5 Dashboard
+### 11.5 Dashboard
 
 1. **KPI Cards** in a responsive grid (`grid-cols-2 md:grid-cols-3 xl:grid-cols-6`):
    - All values computed from SQL query functions, never hard-coded
@@ -934,7 +1016,7 @@ At render time, filter `STATUS_ACTIONS[entity.status]` by the user's role using 
    - Financial roles see revenue KPIs first
    - Some sections hidden for non-applicable roles
 
-### 10.6 Rules/SOPs Browser
+### 11.6 Rules/SOPs Browser
 
 - List page: Cards per rule grouped by category with computed metrics (approval rate, hit rate, gap rate)
 - Detail page: Rule content with keyword highlighting, version history sidebar, metrics sidebar
@@ -999,12 +1081,12 @@ Highlight domain-relevant action keywords (e.g., "Check", "Verify", "Confirm", "
 - Monospace / code font for criteria display
 - Raw `<pre>` or `whitespace-pre-wrap` rendering without parsing headings and bullets
 
-### 10.7 Notifications
+### 11.7 Notifications
 
 - Bell icon in topbar with dynamic unread count (`queryUnreadNotificationCount(user.id)`)
 - Full page: Tabs for All/Unread, alert cards for SLA breaches, notification list with mark-as-read
 
-### 10.8 Settings
+### 11.8 Settings
 
 - Organization info form (name, identifiers, address)
 - Users table with role badges
@@ -1012,9 +1094,9 @@ Highlight domain-relevant action keywords (e.g., "Check", "Verify", "Confirm", "
 
 ---
 
-## 11. Phase 7: Kognitos Integration
+## 12. Phase 8: Kognitos Integration
 
-### 11.1 Mock Kognitos Client (`lib/kognitos/client.ts`)
+### 12.1 Mock Kognitos Client (`lib/kognitos/client.ts`)
 
 Mirror the Kognitos REST API with mock functions:
 
@@ -1039,7 +1121,7 @@ export async function queryMetrics(options?: { metrics?: string[]; groupBy?: str
 export async function getAutomationRunAggregates(): Promise<...> { ... }
 ```
 
-### 11.2 `createRun()` — SOP-Routed Writes
+### 12.2 `createRun()` — SOP-Routed Writes
 
 For actions that involve business logic, the UI calls `createRun()` to execute a Kognitos SOP:
 
@@ -1078,7 +1160,7 @@ async function handleAction(action: string) {
 }
 ```
 
-### 11.3 Mock Run Data Consistency
+### 12.3 Mock Run Data Consistency
 
 Every mock run's `state.completed.outputs` should match the corresponding entity's data in the database tables. This demonstrates that the SOP produced the outputs that were then stored in the database. For example:
 
@@ -1095,7 +1177,7 @@ outputs: {
 { id: "entity-1", status: "approved", confidence_score: 82, auth_number: "AUTH-2026-001", kognitos_run_id: "run-1" }
 ```
 
-### 11.4 SOP Run Tab on Entity Detail Page
+### 12.4 SOP Run Tab on Entity Detail Page
 
 Add a tab that shows the Kognitos run for this entity:
 
@@ -1108,7 +1190,7 @@ Add a tab that shows the Kognitos run for this entity:
    - SOP badges colored by phase name
    - Expandable JSON details per event
 
-### 11.5 Run History on Rule Detail Page
+### 12.5 Run History on Rule Detail Page
 
 Show all runs that used a specific rule:
 - Table with: Run ID, Entity Name, Key Code, Status, Confidence, Duration, Date
@@ -1117,9 +1199,134 @@ Show all runs that used a specific rule:
 
 ---
 
-## 12. Phase 8: Dynamic Metrics via SQL Queries
+## 13. Phase 9: Write Operations Catalog & SOP Generation
 
-### 12.1 Query Module (`lib/queries.ts`)
+This phase produces a complete inventory of every write operation in the app — both direct CRUD and SOP-routed — before any page-level integration. This serves as the contract between the data layer, the Kognitos client, and the UI action handlers.
+
+### 13.1 Why a Dedicated Phase
+
+Write operations are the most error-prone part of the app. Defining them in isolation — before wiring them into pages — ensures:
+
+- Every action has a corresponding persistence function
+- Every action creates an audit event
+- SOP-routed vs. direct CRUD classification is explicit
+- The `SOP_ACTION_MAP` and `STATUS_ACTIONS` are consistent
+- Rule/SOP definitions in seed data align with the SOPs the client executes
+
+### 13.2 Direct CRUD Write Functions
+
+List every write function that `lib/db.ts` must expose. Each function writes to Supabase and returns the updated record:
+
+```typescript
+// Entity writes
+updateEntity(id, updates)    // Update any entity fields + updated_at
+insertEntity(entity)         // Create a new entity
+
+// Audit trail (mandatory for every action)
+insertAuditEvent(event)      // Log action with entity_id, action, actor_id, details
+
+// Related entity writes
+insertComment(comment)       // Add a comment to an entity
+markNotificationRead(id)     // Mark a notification as read
+```
+
+**Completeness check**: For every action button defined in `STATUS_ACTIONS`, there must be either a direct CRUD function or a `createRun()` SOP invocation. If an action cannot be mapped to either, it is missing implementation.
+
+### 13.3 Direct CRUD Action Handlers
+
+For each simple state transition (no business logic), document the exact writes:
+
+```markdown
+| Action          | Entity Update                                | Audit Event Action   | Additional Writes |
+|-----------------|----------------------------------------------|----------------------|-------------------|
+| assign          | { assigned_to: userId }                      | "assigned"           | —                 |
+| start_review    | { status: "under_review" }                   | "review_started"     | —                 |
+| write_off       | { status: "written_off", closed_at: now }    | "written_off"        | —                 |
+| mark_won        | { status: "resolved_won", decided_at: now }  | "resolved_won"       | —                 |
+| mark_lost       | { status: "resolved_lost", decided_at: now } | "resolved_lost"      | —                 |
+| close           | { status: "closed", closed_at: now }         | "closed"             | —                 |
+| create          | (full entity insert)                         | "entity_created"     | —                 |
+```
+
+**Rule**: Every row in this table must use `user?.id` from the auth context as `actor_id` — never a hard-coded value.
+
+### 13.4 SOP Definitions
+
+For each SOP that will run on Kognitos, create a full specification:
+
+```markdown
+## SOP: [sop-id]
+- **Trigger**: Which action button and from which status
+- **Inputs**: Key-value pairs passed to `createRun(sopId, inputs)`
+- **Logic**: Step-by-step description in English of what the SOP does
+- **Outputs**: Key-value pairs in `run.state.completed.outputs`
+- **Side Effects**: Exactly which Supabase writes the SOP executor performs
+  - `updateEntity(id, { field: value, ... })`
+  - `insertAuditEvent({ action: "...", ... })`
+- **Edge Cases**: What happens on failure, timeout, or missing data
+```
+
+### 13.5 SOP Action Map
+
+Define the mapping from UI action keys to Kognitos SOP IDs:
+
+```typescript
+const SOP_ACTION_MAP: Record<string, string> = {
+  action_key_1: "sop-id-1",
+  action_key_2: "sop-id-2",
+  action_key_3: "sop-id-3",
+};
+```
+
+The entity detail page's `handleAction` function uses this map:
+
+```typescript
+async function handleAction(action: string) {
+  if (action in SOP_ACTION_MAP) {
+    await createRun(SOP_ACTION_MAP[action], { entity_id: entity.id, ... });
+  } else {
+    await updateEntity(entity.id, { status: newStatus, ... });
+    await insertAuditEvent({ ... });
+  }
+  await refreshEntity();
+}
+```
+
+### 13.6 Rule / SOP Seed Data Generation
+
+Generate one rule per major category in the domain. Each rule's `criteria` field must be written in **plain English with markdown formatting** (see Conventions section for formatting rules).
+
+For each rule, also generate:
+- A corresponding mock run in `lib/kognitos/client.ts` whose outputs are consistent with an entity that was processed by this rule
+- Mock run events showing the step-by-step execution trace
+
+**Consistency check**: For every entity in the seed data with a `kognitos_run_id`, the corresponding mock run must exist and its outputs must match the entity's current state.
+
+### 13.7 STATUS_ACTIONS Completeness Verification
+
+After defining all write operations and SOPs, verify the `STATUS_ACTIONS` constant:
+
+- Every non-terminal status has at least one action
+- The initial status has actions that advance the workflow (no dead ends)
+- Every action key maps to either a direct CRUD handler or an entry in `SOP_ACTION_MAP`
+- Every action's `requiredActions` array references actions defined in `DOMAIN.roles`
+- Terminal statuses either have a "Close" action or display "No further actions"
+
+```
+Status              → Actions                        → Write Type
+────────────────────────────────────────────────────────────────────
+initial_status      → [Action1 (SOP), Action2]       → createRun / CRUD
+intermediate_status → [Action3, Action4 (SOP)]       → CRUD / createRun
+...
+pre_terminal_status → [Resolve]                      → CRUD
+terminal_status     → [Close] or "No actions"        → CRUD / —
+```
+
+---
+
+## 14. Phase 10: Dynamic Metrics via SQL Queries
+
+### 14.1 Query Module (`lib/queries.ts`)
 
 All query functions are **async** — they fetch data from Supabase via `lib/db.ts`, then compute metrics in JavaScript:
 
@@ -1157,11 +1364,11 @@ export async function queryDenialsByPayerService(): Promise<DenialByPayerService
 }
 ```
 
-### 12.2 Zero Hard-Coded Metrics Rule
+### 14.2 Zero Hard-Coded Metrics Rule
 
 **Every number displayed in the UI must come from a query function or the Kognitos API.** No hard-coded statistics, percentages, or counts anywhere in page components. If a metric appears on screen, there must be a function computing it from data.
 
-### 12.3 Kognitos Analytics Consistency
+### 14.3 Kognitos Analytics Consistency
 
 Update mock Kognitos insights and metrics to match the actual mock data:
 - `totalRunsCount` = number of mock runs
@@ -1171,9 +1378,9 @@ Update mock Kognitos insights and metrics to match the actual mock data:
 
 ---
 
-## 13. Phase 9: Advanced Features
+## 15. Phase 11: Advanced Features
 
-### 13.1 Interactive Dashboard Drill-Down
+### 15.1 Interactive Dashboard Drill-Down
 
 When the user clicks a chart segment, bar, table row, or data point, a `Sheet` component slides in from the right showing the matching entities:
 
@@ -1197,7 +1404,7 @@ onClick={(data) => {
 </Sheet>
 ```
 
-### 13.2 Expandable Table Rows
+### 15.2 Expandable Table Rows
 
 For detailed data like run history, use expandable rows with `React.Fragment`:
 
@@ -1217,7 +1424,7 @@ const [expandedId, setExpandedId] = useState<string | null>(null);
 ))}
 ```
 
-### 13.3 Global Search
+### 15.3 Global Search
 
 Global search requires **two-sided wiring** — the topbar sends the query via URL, and the worklist page reads and applies it. Missing either side makes search appear broken.
 
@@ -1248,7 +1455,7 @@ useEffect(() => {
 
 **Important:** Both sides must be implemented. The topbar navigation alone is not enough — the worklist page must explicitly read the URL parameter and update its local `filters` state, or the search term will be silently ignored.
 
-### 13.4 CSV Export
+### 15.4 CSV Export
 
 ```typescript
 function exportToCSV(entities: Entity[]) {
@@ -1262,7 +1469,7 @@ function exportToCSV(entities: Entity[]) {
 }
 ```
 
-### 13.5 Predictive Scoring
+### 15.5 Predictive Scoring
 
 Query historical approval rates for the same combination of attributes:
 
@@ -1274,7 +1481,7 @@ export async function queryPredictiveScore(codes: string[], categoryId: string):
 }> { ... }
 ```
 
-### 13.6 Threshold / Gold Card Engine
+### 15.6 Threshold / Gold Card Engine
 
 Track approval rates by actor + code + category and flag high-performers:
 
@@ -1285,13 +1492,13 @@ export async function queryGoldCardEligibility(): Promise<{
 }[]> { ... }
 ```
 
-### 13.7 Entity Creation Dialog
+### 15.7 Entity Creation Dialog
 
 A `Dialog` with a form that creates a new entity in the local state:
 - Key fields: name, category, codes, priority, estimated value
 - On submit: adds to `allEntities` state, closes dialog, shows success alert
 
-### 13.8 Episode/Bundle Grouping
+### 15.8 Episode/Bundle Grouping
 
 Add an `episode_id` field to the entity type to group related entities:
 
@@ -1306,7 +1513,7 @@ Display as cards in the worklist page above the filter bar.
 
 ---
 
-## 14. Conventions & Patterns Reference
+## 16. Conventions & Patterns Reference
 
 ### Naming
 
@@ -1432,7 +1639,7 @@ useEffect(() => { ... }, [data]);  // ← React error: hook count changes betwee
 
 ---
 
-## 15. Build Checklist
+## 17. Build Checklist
 
 ### Foundation
 - [ ] Create Next.js app with TypeScript and Tailwind
@@ -1561,18 +1768,99 @@ git push -u origin main
 - [ ] Git init and commit
 
 ### Acceptance Testing
-- [ ] Generate test matrix from domain config (see [Section 16](#16-acceptance-testing))
+- [ ] Generate test matrix from domain config (see [Section 19](#19-acceptance-testing))
 - [ ] Run every test case — every action writes to Supabase and creates an audit event
 - [ ] Verify all changes survive a full page reload
 - [ ] Test across all roles defined in `DOMAIN.roles`
 
 ---
 
-## 16. Acceptance Testing
+## 18. User Stories
+
+Before acceptance testing, generate a comprehensive set of user stories that cover every workflow path in the app. User stories serve as the specification for what the acceptance tests must verify.
+
+### 18.1 User Story Format
+
+Each user story follows the standard format:
+
+```
+US-[N]: As a [role], I [action] so that [outcome].
+```
+
+### 18.2 Deriving User Stories from Domain Config
+
+Generate user stories systematically from the app's configuration:
+
+1. **From `STATUS_ACTIONS`**: For each (status, action) pair, generate a story describing who performs the action and what the expected outcome is
+2. **From `DOMAIN.roles`**: For each role, generate stories covering their primary workflows and permission boundaries
+3. **From `SOP_ACTION_MAP`**: For each SOP, generate a story describing the AI-assisted workflow
+4. **From page features**: For each page (worklist, dashboard, notifications, settings), generate stories covering key user interactions
+
+### 18.3 Lifecycle Stories
+
+Walk one entity through the complete lifecycle across roles. Each step is a user story:
+
+```markdown
+US-1: As a [initial_role], I create a new entity so it enters the worklist in the initial status.
+US-2: As a [initial_role], I trigger the first SOP so the entity is triaged and categorized with AI predictions.
+US-3: As a [initial_role], I assign the entity to a specialist so they can take ownership.
+US-4: As a [specialist_role], I trigger the second SOP so the entity progresses with AI-generated artifacts.
+US-5: As a [specialist_role], I trigger the third SOP so the entity is submitted for external processing.
+US-6: As a [specialist_role], I mark the entity as resolved (positive) so recovery is tracked.
+US-7: As a [specialist_role], I mark the entity as resolved (negative) so the loss is recorded.
+US-8: As a [manager_role], I write off an entity so it is removed from the active worklist without further action.
+US-9: As a [manager_role], I close a resolved entity so it reaches its terminal state.
+```
+
+### 18.4 Dashboard & Analytics Stories
+
+```markdown
+US-10: As a manager, I view the dashboard to see KPIs, trends, and team performance metrics.
+US-11: As a manager, I click a chart segment to drill down into the matching entities.
+US-12: As any role, I search for an entity from the topbar and the worklist filters to that result.
+```
+
+### 18.5 Notification & Settings Stories
+
+```markdown
+US-13: As any role, I receive notifications for approaching deadlines and status changes.
+US-14: As an admin, I view and manage domain configuration (users, org settings).
+```
+
+### 18.6 Negative / Boundary Stories
+
+```markdown
+US-15: As a role without permission, I do NOT see action buttons that require higher privileges.
+US-16: As any role, I cannot revert a terminal-status entity to an earlier status.
+US-17: As any role, when I perform an action and reload the page, the change persists (not lost).
+```
+
+### 18.7 Cross-Role Lifecycle Story
+
+The most important test: walk one entity through the **complete lifecycle** across multiple roles, verifying every transition:
+
+```
+1. [initial_role] creates entity → initial_status
+2. [initial_role] runs SOP-1 → intermediate_status_1
+3. [initial_role] assigns to [specialist_role]
+4. [specialist_role] runs SOP-2 → intermediate_status_2
+5. [specialist_role] runs SOP-3 → intermediate_status_3
+6. [specialist_role] resolves → resolution_status
+7. [manager_role] closes → terminal_status
+```
+
+Each step must:
+- Persist to the database (verified by direct Supabase query)
+- Create an audit event with the correct actor_id
+- Survive a full page reload
+
+---
+
+## 19. Acceptance Testing
 
 After deployment, generate and execute a full acceptance test suite that verifies every user-facing action creates persistent updates in Supabase. Do not rely on manual spot-checks — systematically test every action in the app.
 
-### 16.1 Generate the Test Matrix
+### 19.1 Generate the Test Matrix
 
 Derive the test matrix automatically from the app's domain config and action definitions. The inputs are:
 
@@ -1601,7 +1889,7 @@ For each combination of (status × action × role), generate a row:
 - Every action must be tested with the role that has permission for it
 - The terminal status should have no action rows (verify "no further actions" message instead)
 
-### 16.2 Pre-Test: Snapshot the Database
+### 19.2 Pre-Test: Snapshot the Database
 
 Before running tests, capture a baseline of the database state:
 
@@ -1615,7 +1903,7 @@ curl -s "$SUPABASE_URL/rest/v1/audit_events?select=id&order=created_at.desc&limi
   -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY"
 ```
 
-### 16.3 Execute Tests
+### 19.3 Execute Tests
 
 For each row in the test matrix, follow this protocol:
 
@@ -1649,7 +1937,7 @@ curl -s "$SUPABASE_URL/rest/v1/audit_events?entity_id=eq.$ENTITY_ID&select=id,ac
 **Step 6: Reload and re-verify**
 Reload the page. The status and data must match what was set in Step 4. If it reverts, the write failed silently.
 
-### 16.4 Post-Test: Verify Audit Trail Completeness
+### 19.4 Post-Test: Verify Audit Trail Completeness
 
 After all tests, query the audit_events table to confirm one event per test action:
 
@@ -1661,7 +1949,7 @@ curl -s "$SUPABASE_URL/rest/v1/audit_events?created_at=gte.$TEST_START_TIME&sele
 
 Expected: one audit event per test row, each with the correct `entity_id`, `action`, and `actor_id`.
 
-### 16.5 What to Test Beyond Actions
+### 19.5 What to Test Beyond Actions
 
 | Area | What to verify |
 |------|----------------|
@@ -1673,7 +1961,7 @@ Expected: one audit event per test row, each with the correct `entity_id`, `acti
 | **Topbar search** | Search from topbar filters the worklist correctly |
 | **Notifications** | Notifications filter by the logged-in user |
 
-### 16.6 Common Failures and Root Causes
+### 19.6 Common Failures and Root Causes
 
 | Symptom | Root cause | Fix |
 |---------|-----------|-----|

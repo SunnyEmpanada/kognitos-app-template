@@ -14,9 +14,8 @@ import {
   Trash2,
   Send,
   Loader2,
-  PanelRightClose,
-  PanelRightOpen,
-  SquarePen,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChat } from "@/lib/chat/use-chat";
@@ -31,12 +30,20 @@ import {
   TooltipTrigger,
 } from "./tooltip";
 
+const MIN_WIDTH = 360;
+const MAX_WIDTH = 900;
+const DEFAULT_WIDTH = 420;
+
 export function ChatPanel() {
   const [isOpen, setIsOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_WIDTH);
+  const [isDragging, setIsDragging] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dragStartX = useRef(0);
+  const dragStartWidth = useRef(0);
 
   const {
     sessions,
@@ -53,17 +60,48 @@ export function ChatPanel() {
     rejectWriteAction,
   } = useChat();
 
-  // Auto-scroll on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Focus input when panel opens
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const onMouseMove = (e: MouseEvent) => {
+      const delta = dragStartX.current - e.clientX;
+      const next = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, dragStartWidth.current + delta));
+      setPanelWidth(next);
+    };
+
+    const onMouseUp = () => setIsDragging(false);
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+  }, [isDragging]);
+
+  const handleDragStart = useCallback(
+    (e: React.MouseEvent) => {
+      dragStartX.current = e.clientX;
+      dragStartWidth.current = panelWidth;
+      setIsDragging(true);
+    },
+    [panelWidth]
+  );
 
   const handleSubmit = useCallback(
     (e: FormEvent) => {
@@ -103,34 +141,87 @@ export function ChatPanel() {
       {/* Panel */}
       <div
         className={cn(
-          "fixed inset-y-0 right-0 z-40 flex border-l bg-background shadow-xl transition-transform duration-300",
+          "fixed inset-y-0 right-0 z-40 flex bg-background shadow-xl",
           isOpen ? "translate-x-0" : "translate-x-full",
-          sidebarOpen ? "w-[600px]" : "w-[400px]"
+          !isDragging && "transition-transform duration-300 ease-in-out"
         )}
+        style={{ width: panelWidth }}
       >
-        {/* Session sidebar */}
-        {sidebarOpen && (
-          <div className="flex w-[200px] shrink-0 flex-col border-r bg-muted/30">
-            <div className="flex items-center justify-between border-b px-3 py-2.5">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Chats
-              </span>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-7"
-                    onClick={handleNewChat}
-                  >
-                    <Plus className="size-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>New chat</TooltipContent>
-              </Tooltip>
-            </div>
+        {/* Drag handle */}
+        <div
+          className="absolute inset-y-0 left-0 z-50 w-1.5 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors"
+          onMouseDown={handleDragStart}
+        />
+
+        {/* Left sidebar strip — always visible, expands on toggle */}
+        <div className="flex shrink-0 flex-col border-r bg-muted/30">
+          {/* Sidebar header with toggle on the right */}
+          <div className="flex items-center justify-end border-b px-1.5 py-2.5">
+            {sidebarOpen && (
+              <>
+                <span className="mr-auto text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Chats
+                </span>
+                {sessions.length > 0 && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-7 text-muted-foreground hover:text-destructive"
+                        onClick={() => {
+                          if (window.confirm("Delete all chat sessions?")) {
+                            sessions.forEach((s) => deleteSession(s.id));
+                          }
+                        }}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Delete all</TooltipContent>
+                  </Tooltip>
+                )}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7"
+                      onClick={handleNewChat}
+                    >
+                      <Plus className="size-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>New chat</TooltipContent>
+                </Tooltip>
+              </>
+            )}
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                >
+                  {sidebarOpen ? (
+                    <PanelLeftClose className="size-4" />
+                  ) : (
+                    <PanelLeftOpen className="size-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                {sidebarOpen ? "Hide sessions" : "Show sessions"}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+
+          {/* Session list — only when expanded */}
+          {sidebarOpen && (
             <ScrollArea className="flex-1">
-              <div className="space-y-0.5 p-1.5">
+              <div className="w-[180px] space-y-0.5 p-1.5">
                 {sessions.length === 0 && (
                   <div className="px-2 py-6 text-center text-xs text-muted-foreground">
                     No conversations yet.
@@ -153,65 +244,31 @@ export function ChatPanel() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="size-5 shrink-0 opacity-0 group-hover:opacity-100"
+                      className="size-5 shrink-0 opacity-0 group-hover:opacity-100 hover:text-destructive"
                       onClick={(e) => {
                         e.stopPropagation();
                         deleteSession(session.id);
                       }}
                     >
-                      <Trash2 className="size-3 text-muted-foreground" />
+                      <Trash2 className="size-3" />
                     </Button>
                   </div>
                 ))}
               </div>
             </ScrollArea>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Main chat area */}
         <div className="flex min-h-0 flex-1 flex-col">
           {/* Header */}
           <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2.5">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7"
-                  onClick={() => setSidebarOpen(!sidebarOpen)}
-                >
-                  {sidebarOpen ? (
-                    <PanelRightClose className="size-4" />
-                  ) : (
-                    <PanelRightOpen className="size-4" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {sidebarOpen ? "Hide sessions" : "Show sessions"}
-              </TooltipContent>
-            </Tooltip>
-
             <div className="flex-1 text-sm font-medium">
               {activeSessionId
                 ? sessions.find((s) => s.id === activeSessionId)?.title ||
                   "Chat"
                 : "AI Assistant"}
             </div>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7"
-                  onClick={handleNewChat}
-                >
-                  <SquarePen className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>New chat</TooltipContent>
-            </Tooltip>
 
             <Tooltip>
               <TooltipTrigger asChild>
@@ -249,9 +306,9 @@ export function ChatPanel() {
                 </div>
                 <div className="mt-2 flex flex-wrap justify-center gap-1.5">
                   {[
-                    "How many charts are pending?",
-                    "Average reimbursement?",
-                    "Charts assigned to me?",
+                    "How many items are pending?",
+                    "What's the average value?",
+                    "Show items assigned to me",
                   ].map((q) => (
                     <button
                       key={q}

@@ -19,15 +19,24 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     if (!user) return;
-    getNotificationsForUser(user.id).then((data) =>
-      setItems(
-        [...data].sort(
-          (a, b) =>
-            new Date(b.created_at).getTime() -
-            new Date(a.created_at).getTime(),
+
+    function load() {
+      getNotificationsForUser(user!.id).then((data) =>
+        setItems(
+          [...data].sort(
+            (a, b) =>
+              new Date(b.created_at).getTime() -
+              new Date(a.created_at).getTime(),
+          ),
         ),
-      ),
-    );
+      );
+    }
+
+    load();
+
+    const onDataChanged = () => load();
+    window.addEventListener("chat-data-changed", onDataChanged);
+    return () => window.removeEventListener("chat-data-changed", onDataChanged);
   }, [user]);
 
   const unreadCount = useMemo(
