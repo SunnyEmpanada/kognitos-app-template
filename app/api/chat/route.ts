@@ -40,7 +40,10 @@ function isWriteQuery(sql: string): boolean {
 }
 
 function generateId(): string {
-  return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const bytes = new Uint8Array(6);
+  crypto.getRandomValues(bytes);
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `msg_${Date.now()}_${hex}`;
 }
 
 async function executeSQL(sql: string): Promise<{ data?: unknown; error?: string }> {

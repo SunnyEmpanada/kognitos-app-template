@@ -6,7 +6,10 @@ import type { ChatSession, ChatMessage, PendingWrite, ChatStreamEvent } from "./
 const MOCK_USER_ID = "user-1";
 
 function generateId(prefix: string): string {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const bytes = new Uint8Array(6);
+  crypto.getRandomValues(bytes);
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${prefix}_${Date.now()}_${hex}`;
 }
 
 export function useChat() {
