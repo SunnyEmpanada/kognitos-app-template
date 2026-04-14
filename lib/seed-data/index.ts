@@ -93,6 +93,127 @@ export const rules = [
   },
 ];
 
+// ── Kognitos runs (Supabase `kognitos_runs`; matches migration placeholders) ──
+
+export const kognitosRuns = [
+  {
+    id: "run-1",
+    name: "workspaces/ws-1/runs/run-1",
+    payload: {
+      name: "workspaces/ws-1/runs/run-1",
+      createTime: "2026-02-20T09:00:00Z",
+      updateTime: "2026-02-20T09:04:32Z",
+      state: {
+        completed: {
+          outputs: {
+            status: "approved",
+            reviewer_notes: "Budget within limits",
+            confidence_score: "85",
+          },
+        },
+      },
+      stage: "review-request",
+      stageVersion: "1.0",
+      invocationDetails: { invocationSource: "api" },
+      userInputs: {
+        request_id: "req-4",
+        title: "Cloud Server Upgrade",
+        category: "equipment",
+      },
+    },
+    create_time: "2026-02-20T09:00:00Z",
+    update_time: "2026-02-20T09:04:32Z",
+  },
+  {
+    id: "run-2",
+    name: "workspaces/ws-1/runs/run-2",
+    payload: {
+      name: "workspaces/ws-1/runs/run-2",
+      createTime: "2026-02-21T14:30:00Z",
+      updateTime: "2026-02-21T14:33:15Z",
+      state: {
+        completed: {
+          outputs: {
+            status: "under_review",
+            escalation_reason: "Exceeds budget threshold",
+            assigned_to: "user-3",
+          },
+        },
+      },
+      stage: "escalate-request",
+      stageVersion: "1.0",
+      invocationDetails: { invocationSource: "api" },
+      userInputs: {
+        request_id: "req-7",
+        title: "Annual Consulting Contract",
+        category: "consulting",
+      },
+    },
+    create_time: "2026-02-21T14:30:00Z",
+    update_time: "2026-02-21T14:33:15Z",
+  },
+  {
+    id: "run-3",
+    name: "workspaces/ws-1/runs/run-3",
+    payload: {
+      name: "workspaces/ws-1/runs/run-3",
+      createTime: "2026-02-10T10:00:00Z",
+      updateTime: "2026-02-15T11:00:00Z",
+      state: { completed: { outputs: { status: "under_review" } } },
+      stage: "review-request",
+      stageVersion: "1.0",
+      invocationDetails: { invocationSource: "api" },
+      userInputs: {
+        request_id: "req-6",
+        title: "Datadog APM upgrade",
+        category: "software",
+      },
+    },
+    create_time: "2026-02-10T10:00:00Z",
+    update_time: "2026-02-15T11:00:00Z",
+  },
+  {
+    id: "run-4",
+    name: "workspaces/ws-1/runs/run-4",
+    payload: {
+      name: "workspaces/ws-1/runs/run-4",
+      createTime: "2026-01-20T10:00:00Z",
+      updateTime: "2026-01-28T15:00:00Z",
+      state: { completed: { outputs: { status: "approved" } } },
+      stage: "review-request",
+      stageVersion: "1.0",
+      invocationDetails: { invocationSource: "api" },
+      userInputs: {
+        request_id: "req-9",
+        title: "AWS reserved instances",
+        category: "software",
+      },
+    },
+    create_time: "2026-01-20T10:00:00Z",
+    update_time: "2026-01-28T15:00:00Z",
+  },
+  {
+    id: "run-5",
+    name: "workspaces/ws-1/runs/run-5",
+    payload: {
+      name: "workspaces/ws-1/runs/run-5",
+      createTime: "2026-01-05T09:00:00Z",
+      updateTime: "2026-01-15T10:00:00Z",
+      state: { completed: { outputs: { status: "closed" } } },
+      stage: "review-request",
+      stageVersion: "1.0",
+      invocationDetails: { invocationSource: "api" },
+      userInputs: {
+        request_id: "req-14",
+        title: "New laptop provisioning",
+        category: "equipment",
+      },
+    },
+    create_time: "2026-01-05T09:00:00Z",
+    update_time: "2026-01-15T10:00:00Z",
+  },
+];
+
 // ── Requests ───────────────────────────────────────────────────
 
 export const requests = [

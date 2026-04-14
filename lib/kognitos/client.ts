@@ -221,8 +221,23 @@ const mockMetricResults: KognitosMetricResult[] = [
 
 // ── API Functions ──────────────────────────────────────────────
 
-/** Simulates GET /api/v1/.../runs/{run_id} */
+/**
+ * Resolves GET run for the UI: tries stored `kognitos_runs` via `/api/kognitos/runs/:id`, then mock data.
+ */
 export async function getRun(runId: string): Promise<KognitosRun | null> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(
+        `/api/kognitos/runs/${encodeURIComponent(runId)}`,
+      );
+      if (res.ok) {
+        const json = (await res.json()) as { run?: KognitosRun | null };
+        if (json.run) return json.run;
+      }
+    } catch {
+      /* fall through to mock */
+    }
+  }
   await Promise.resolve();
   const run = mockRuns.find(
     (r) =>

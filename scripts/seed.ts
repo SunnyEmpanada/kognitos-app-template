@@ -1,11 +1,18 @@
 /**
  * Seed script: pushes all seed data into Supabase.
  *
- * Usage:
- *   NEXT_PUBLIC_SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npx tsx scripts/seed.ts
+ * Usage (from repo root, reads `.env.local`):
+ *   npm run seed
+ *
+ * Or: NEXT_PUBLIC_SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npx tsx scripts/seed.ts
  *
  * Uses service role key to bypass RLS.
  */
+
+import { config } from "dotenv";
+import { resolve } from "node:path";
+
+config({ path: resolve(process.cwd(), ".env.local") });
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -36,6 +43,7 @@ async function main() {
     organizations,
     users,
     rules,
+    kognitosRuns,
     requests,
     documents,
     comments,
@@ -46,6 +54,7 @@ async function main() {
   await upsert("organizations", organizations);
   await upsert("users", users);
   await upsert("rules", rules);
+  await upsert("kognitos_runs", kognitosRuns);
   await upsert("requests", requests);
   await upsert("documents", documents);
   await upsert("comments", comments);
