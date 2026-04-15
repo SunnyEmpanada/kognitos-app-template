@@ -93,11 +93,29 @@ export const rules = [
   },
 ];
 
+// ── Kognitos automations (must match migration `00000000000005_kognitos_automations.sql`) ──
+
+export const SEED_KOGNITOS_AUTOMATION_ID = "f47ac10b-58cc-4372-a567-0e02b2c3d479";
+
+export const kognitosAutomations = [
+  {
+    id: SEED_KOGNITOS_AUTOMATION_ID,
+    automation_id: "seed-automation",
+    resource_name:
+      "organizations/org-1/workspaces/ws-1/automations/seed-automation",
+    display_name: "Seed automation",
+    description: null as string | null,
+    org_id: "org-1",
+    created_at: "2026-01-02T09:00:00Z",
+  },
+];
+
 // ── Kognitos runs (Supabase `kognitos_runs`; matches migration placeholders) ──
 
 export const kognitosRuns = [
   {
     id: "run-1",
+    kognitos_automation_id: SEED_KOGNITOS_AUTOMATION_ID,
     name: "workspaces/ws-1/runs/run-1",
     payload: {
       name: "workspaces/ws-1/runs/run-1",
@@ -126,6 +144,7 @@ export const kognitosRuns = [
   },
   {
     id: "run-2",
+    kognitos_automation_id: SEED_KOGNITOS_AUTOMATION_ID,
     name: "workspaces/ws-1/runs/run-2",
     payload: {
       name: "workspaces/ws-1/runs/run-2",
@@ -154,6 +173,7 @@ export const kognitosRuns = [
   },
   {
     id: "run-3",
+    kognitos_automation_id: SEED_KOGNITOS_AUTOMATION_ID,
     name: "workspaces/ws-1/runs/run-3",
     payload: {
       name: "workspaces/ws-1/runs/run-3",
@@ -174,6 +194,7 @@ export const kognitosRuns = [
   },
   {
     id: "run-4",
+    kognitos_automation_id: SEED_KOGNITOS_AUTOMATION_ID,
     name: "workspaces/ws-1/runs/run-4",
     payload: {
       name: "workspaces/ws-1/runs/run-4",
@@ -194,6 +215,7 @@ export const kognitosRuns = [
   },
   {
     id: "run-5",
+    kognitos_automation_id: SEED_KOGNITOS_AUTOMATION_ID,
     name: "workspaces/ws-1/runs/run-5",
     payload: {
       name: "workspaces/ws-1/runs/run-5",

@@ -7,8 +7,7 @@ export async function POST() {
     process.env.KOGNITOS_BASE_URL &&
     (process.env.KOGNITOS_API_KEY || process.env.KOGNITOS_PAT) &&
     (process.env.KOGNITOS_ORGANIZATION_ID || process.env.KOGNITOS_ORG_ID) &&
-    process.env.KOGNITOS_WORKSPACE_ID &&
-    process.env.KOGNITOS_AUTOMATION_ID;
+    process.env.KOGNITOS_WORKSPACE_ID;
 
   if (!hasEnv) {
     return NextResponse.json(
@@ -16,7 +15,7 @@ export async function POST() {
         ok: false,
         error: "kognitos_env_missing",
         message:
-          "Configure KOGNITOS_BASE_URL, KOGNITOS_API_KEY (or KOGNITOS_PAT), organization, workspace, and automation IDs.",
+          "Configure KOGNITOS_BASE_URL, KOGNITOS_API_KEY (or KOGNITOS_PAT), organization, and workspace. Register automations in-app (or set KOGNITOS_AUTOMATION_ID for single-automation bootstrap).",
       },
       { status: 503 },
     );

@@ -80,9 +80,11 @@ export function Topbar() {
         error?: string;
       };
       if (!res.ok) {
-        window.alert(
-          json.message ?? json.error ?? `Kognitos sync failed (${res.status})`,
-        );
+        const msg =
+          json.error === "no_automations_registered"
+            ? "No automations are registered yet. Complete onboarding (admin) or add automations in Settings, then try again."
+            : (json.message ?? json.error ?? `Kognitos sync failed (${res.status})`);
+        window.alert(msg);
         return;
       }
       const fetched = json.fetchedFromKognitos ?? 0;

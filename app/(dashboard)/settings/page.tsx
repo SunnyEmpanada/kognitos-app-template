@@ -1,8 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Building2, Users, Save, ChevronRight } from "lucide-react";
+import {
+  Building2,
+  Users,
+  Save,
+  ChevronRight,
+  Plus,
+} from "lucide-react";
 import {
   Card,
   CardContent,
@@ -14,18 +20,51 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { DOMAIN } from "@/lib/domain.config";
+import { useAuth } from "@/lib/auth-context";
+import { WorkspaceAutomationListRow } from "@/components/kognitos/workspace-automation-list-row";
+import { KognitosAutomationPickerDialog } from "@/components/kognitos/kognitos-automation-picker-dialog";
 
-/* CUSTOMIZE: Adjust organization fields for your domain. */
+type AutomationRow = {
+  id: string;
+  automation_id: string;
+  display_name: string | null;
+  description: string | null;
+  resource_name: string | null;
+};
+
 export default function SettingsPage() {
+  const { user } = useAuth();
   const [orgName, setOrgName] = useState("Example Organization");
   const [timezone, setTimezone] = useState("America/New_York");
   const [saved, setSaved] = useState(false);
+  const [automations, setAutomations] = useState<AutomationRow[]>([]);
+  const [loadingAutos, setLoadingAutos] = useState(true);
+  const [addOpen, setAddOpen] = useState(false);
+
+  const loadAutomations = useCallback(async () => {
+    setLoadingAutos(true);
+    try {
+      const res = await fetch("/api/kognitos/automations");
+      const json = (await res.json()) as { automations?: AutomationRow[] };
+      if (res.ok) setAutomations(json.automations ?? []);
+    } finally {
+      setLoadingAutos(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAutomations();
+  }, [loadAutomations]);
 
   function handleSave() {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
+
+  const registeredIds = new Set(automations.map((a) => a.automation_id));
+  const isAdmin = user?.role === "admin";
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
@@ -79,6 +118,69 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Kognitos automations</CardTitle>
+          <CardDescription>
+            Automations registered for sync and storage. Removals are not
+            available in the app.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {loadingAutos ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : automations.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No automations registered.
+            </p>
+          ) : (
+            <ScrollArea className="h-[min(320px,50vh)]">
+              <div className="space-y-2 pr-3">
+                {automations.map((a) => (
+                  <WorkspaceAutomationListRow
+                    key={a.id}
+                    id={`reg-${a.id}`}
+                    title={a.display_name || a.automation_id}
+                    description={a.description ?? undefined}
+                    checked
+                    locked
+                  />
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+          {isAdmin ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2"
+              onClick={() => setAddOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+              Add automations
+            </Button>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Only admins can register additional automations.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {isAdmin ? (
+        <KognitosAutomationPickerDialog
+          mode="add"
+          open={addOpen}
+          blocking={false}
+          registeredAutomationIds={registeredIds}
+          title="Add Kognitos automations"
+          onOpenChange={setAddOpen}
+          onCompleted={() => {
+            void loadAutomations();
+          }}
+        />
+      ) : null}
 
       <Separator />
 

@@ -31,9 +31,10 @@ function requireWorkspace(): string {
   return id;
 }
 
-function requireAutomation(): string {
-  const id = process.env.KOGNITOS_AUTOMATION_ID;
-  if (!id) throw new Error("Set KOGNITOS_AUTOMATION_ID");
+/** Short automation id for API paths (falls back to env when omitted). */
+export function resolveAutomationId(explicit?: string): string {
+  const id = explicit ?? process.env.KOGNITOS_AUTOMATION_ID;
+  if (!id) throw new Error("Set KOGNITOS_AUTOMATION_ID or pass automationId");
   return id;
 }
 
@@ -166,11 +167,57 @@ function mapMetricResults(raw: Record<string, unknown>): KognitosMetricResult[] 
   });
 }
 
-/** GET …/automations/{id}/runs/{runId} */
-export async function getRun(runId: string): Promise<KognitosRun | null> {
+export type RawAutomation = Record<string, unknown>;
+
+/** GET …/workspaces/{ws}/automations — one page (raw API JSON). */
+export async function listAutomationsRaw(options?: {
+  pageSize?: number;
+  pageToken?: string | null;
+}): Promise<{
+  automations: RawAutomation[];
+  nextPageToken: string | null;
+}> {
   const org = requireOrg();
   const ws = requireWorkspace();
-  const auto = requireAutomation();
+  const pageSize = Math.min(options?.pageSize ?? 100, 1000);
+  const params = new URLSearchParams();
+  params.set("page_size", String(pageSize));
+  if (options?.pageToken) params.set("page_token", options.pageToken);
+  const path = `/api/v1/organizations/${encodeURIComponent(org)}/workspaces/${encodeURIComponent(ws)}/automations?${params}`;
+  const data = await kognitosFetchJson<Record<string, unknown>>(path);
+  const raw = (data.automations ?? data.automation ?? []) as unknown[];
+  const automations = raw.map((a) => (a ?? {}) as RawAutomation);
+  const nextPageToken =
+    (typeof data.next_page_token === "string"
+      ? data.next_page_token
+      : null) ??
+    (typeof data.nextPageToken === "string" ? data.nextPageToken : null);
+  return { automations, nextPageToken };
+}
+
+/** Paginate ListAutomations until all automations are loaded. */
+export async function listAllAutomationsRaw(): Promise<RawAutomation[]> {
+  const out: RawAutomation[] = [];
+  let pageToken: string | null = null;
+  do {
+    const page = await listAutomationsRaw({
+      pageSize: 100,
+      pageToken,
+    });
+    out.push(...page.automations);
+    pageToken = page.nextPageToken;
+  } while (pageToken);
+  return out;
+}
+
+/** GET …/automations/{id}/runs/{runId} */
+export async function getRun(
+  runId: string,
+  automationId?: string,
+): Promise<KognitosRun | null> {
+  const org = requireOrg();
+  const ws = requireWorkspace();
+  const auto = resolveAutomationId(automationId);
   const path = `/api/v1/organizations/${encodeURIComponent(org)}/workspaces/${encodeURIComponent(ws)}/automations/${encodeURIComponent(auto)}/runs/${encodeURIComponent(runId)}`;
   const data = await kognitosFetchJson<Record<string, unknown>>(path);
   if (!data || typeof data !== "object") return null;
@@ -181,10 +228,11 @@ export async function listRuns(options?: {
   pageSize?: number;
   filter?: string;
   pageToken?: string | null;
+  automationId?: string;
 }): Promise<{ runs: KognitosRun[]; nextPageToken: string | null }> {
   const org = requireOrg();
   const ws = requireWorkspace();
-  const auto = requireAutomation();
+  const auto = resolveAutomationId(options?.automationId);
   const pageSize = Math.min(options?.pageSize ?? 100, 1000);
   const params = new URLSearchParams();
   params.set("pageSize", String(pageSize));
@@ -208,6 +256,7 @@ export async function listRuns(options?: {
 export async function listAllRunsForAutomation(options?: {
   pageSize?: number;
   filter?: string;
+  automationId?: string;
 }): Promise<KognitosRun[]> {
   const out: KognitosRun[] = [];
   let pageToken: string | null = null;
@@ -216,6 +265,7 @@ export async function listAllRunsForAutomation(options?: {
       pageSize: options?.pageSize ?? 100,
       filter: options?.filter,
       pageToken,
+      automationId: options?.automationId,
     });
     out.push(...page.runs);
     pageToken = page.nextPageToken;
@@ -230,10 +280,11 @@ export async function listRunsRaw(options?: {
   pageSize?: number;
   filter?: string;
   pageToken?: string | null;
+  automationId?: string;
 }): Promise<{ runs: Record<string, unknown>[]; nextPageToken: string | null }> {
   const org = requireOrg();
   const ws = requireWorkspace();
-  const auto = requireAutomation();
+  const auto = resolveAutomationId(options?.automationId);
   const pageSize = Math.min(options?.pageSize ?? 100, 1000);
   const params = new URLSearchParams();
   params.set("pageSize", String(pageSize));
@@ -253,6 +304,7 @@ export async function listRunsRaw(options?: {
 export async function listAllRunsForAutomationRaw(options?: {
   pageSize?: number;
   filter?: string;
+  automationId?: string;
 }): Promise<Record<string, unknown>[]> {
   const out: Record<string, unknown>[] = [];
   let pageToken: string | null = null;
@@ -261,6 +313,7 @@ export async function listAllRunsForAutomationRaw(options?: {
       pageSize: options?.pageSize ?? 100,
       filter: options?.filter,
       pageToken,
+      automationId: options?.automationId,
     });
     out.push(...page.runs);
     pageToken = page.nextPageToken;
@@ -271,10 +324,11 @@ export async function listAllRunsForAutomationRaw(options?: {
 /** GET run by short id — raw JSON (for payload repair / verification). */
 export async function getRunRaw(
   runId: string,
+  automationId?: string,
 ): Promise<Record<string, unknown> | null> {
   const org = requireOrg();
   const ws = requireWorkspace();
-  const auto = requireAutomation();
+  const auto = resolveAutomationId(automationId);
   const path = `/api/v1/organizations/${encodeURIComponent(org)}/workspaces/${encodeURIComponent(ws)}/automations/${encodeURIComponent(auto)}/runs/${encodeURIComponent(runId)}`;
   const data = await kognitosFetchJson<Record<string, unknown>>(path);
   if (!data || typeof data !== "object") return null;

@@ -43,6 +43,7 @@ async function main() {
     organizations,
     users,
     rules,
+    kognitosAutomations,
     kognitosRuns,
     requests,
     documents,
@@ -54,6 +55,7 @@ async function main() {
   await upsert("organizations", organizations);
   await upsert("users", users);
   await upsert("rules", rules);
+  await upsert("kognitos_automations", kognitosAutomations);
   await upsert("kognitos_runs", kognitosRuns);
   await upsert("requests", requests);
   await upsert("documents", documents);

@@ -93,19 +93,19 @@ At minimum, set **Supabase** so the app, seed script, and Kognitos API routes ca
 
 You can find these under Supabase **Project Settings → API**. If you use Vercel with the Supabase integration, the `NEXT_PUBLIC_*` vars are often injected for you; you still need to add `SUPABASE_SERVICE_ROLE_KEY` in Vercel for sync and seeding.
 
-**Kognitos API** (required for importing real runs from your automation):
+**Kognitos API** (required for importing real runs from the Kognitos API):
 
 - `KOGNITOS_BASE_URL` — API base URL (no trailing slash)  
 - `KOGNITOS_API_KEY` *or* `KOGNITOS_PAT` — bearer token  
 - `KOGNITOS_ORGANIZATION_ID` or `KOGNITOS_ORG_ID` — organization id  
 - `KOGNITOS_WORKSPACE_ID` — workspace id  
-- `KOGNITOS_AUTOMATION_ID` — automation id whose runs you list and store  
+- `KOGNITOS_AUTOMATION_ID` — **optional.** When set, the app can insert one registered automation at runtime on first status/sync so the **first-time onboarding dialog may be skipped**. When unset, an **admin** completes in-app onboarding to pick automations after deploy.
 
-Without these, the UI still works using the mock Kognitos client; the **Refresh** button in the top bar will report that Kognitos env is not configured.
+Without the base URL / token / org / workspace, the UI still works using the mock Kognitos client; the **Refresh** button in the top bar will report that Kognitos env is not configured.
 
 ### 5. Seed the Database
 
-The seed script reads `.env.local` and upserts organizations, users, requests, **`kognitos_runs`** placeholder rows (so foreign keys line up), and related data:
+The seed script reads `.env.local` and upserts organizations, users, requests, **`kognitos_automations`** (seed automation) and **`kognitos_runs`** placeholder rows (so foreign keys line up), and related data:
 
 ```bash
 npm run seed
@@ -126,6 +126,8 @@ npm run dev:restart
 ```
 
 Open [http://localhost:3000](http://localhost:3000). Log in with any role to explore the app.
+
+**First visit:** If no automations are registered yet (for example you removed seed data or started from an empty table), an **admin** sees a one-time **onboarding dialog** to choose workspace automations (skipped when `KOGNITOS_AUTOMATION_ID` bootstrap applies). Other roles see a **setup pending** screen until an admin finishes onboarding.
 
 ## Customizing for Your Domain
 
@@ -148,7 +150,22 @@ This template is set up so you can treat Kognitos as the source of truth for aut
 - **`kognitos_runs`** stores each run’s **raw API JSON** (`payload` jsonb), matching ListRuns/GetRun shapes so fields like `user_inputs` / `userInputs` and nested `file` objects stay intact. The bundled [`lib/kognitos/openapi.yaml`](lib/kognitos/openapi.yaml) is the reference contract.
 - **`kognitos_run_inputs`** holds **denormalized rows** for file-shaped inputs (normalized file id, optional filename and `remote_raw`) so you can join and filter without parsing JSON everywhere. Rows are rebuilt whenever a new run is imported or when you run the payload refresh script.
 
-**Import runs from Kognitos:** use the **refresh icon** in the top bar (next to notifications). It calls `POST /api/kognitos/sync`, which paginates ListRuns for the configured automation, inserts only new runs (incremental after the latest stored `create_time`), and reindexes inputs. Requires Supabase service role + full Kognitos env (see above).
+**Import runs from Kognitos:** use the **refresh icon** in the top bar (next to notifications). It calls `POST /api/kognitos/sync`, which loops **registered automations** in Supabase, paginates ListRuns per automation, inserts new rows with the correct automation link, and reindexes inputs (incremental per automation using the latest stored `create_time`). Requires Supabase service role + Kognitos base URL, token, org, and workspace (see above). Admins can register automations in onboarding or **Settings**.
+
+**Manual cleanup (Supabase only):** To remove synced data, use the SQL editor with a role that can delete from these tables. **Back up first.** Delete one automation by short id (same as in API paths / env):
+
+```sql
+DELETE FROM kognitos_automations
+WHERE automation_id = 'your-automation-id';
+```
+
+Full reset of registered automations and all synced runs/inputs tied to them:
+
+```sql
+DELETE FROM kognitos_automations;
+```
+
+Deleting automation rows cascades to related runs and inputs; `requests.kognitos_run_id` is cleared when runs are removed.
 
 **Repair stored payloads:** if you previously stored mapped runs and need full `file.remote` paths, run:
 
@@ -159,6 +176,26 @@ npm run refresh:run-payloads
 That re-fetches each run via GET Run, updates `kognitos_runs.payload`, and reindexes `kognitos_run_inputs`.
 
 **UI behavior:** [`lib/kognitos/client.ts`](lib/kognitos/client.ts) provides mocks for list runs, events, and metrics so the dashboard works out of the box. For **get run** on the entity detail page, the client first requests **`GET /api/kognitos/runs/[id]`** (stored row); if none exists, it falls back to the mock run. Point `requests.kognitos_run_id` at a stored id after sync, or keep using mock ids that match the seed data.
+
+## Data table module (filterable list tables)
+
+For new screens that need the **card → toolbar → bordered table → pagination** pattern (for example, analyzed vs on-hold invoice-style lists), use [`components/data-table`](components/data-table/index.ts):
+
+| Export | Role |
+|--------|------|
+| `DataTableCard` | `Card` with title + description |
+| `DataTableToolbar` | Responsive flex row for tabs, selects, filter popovers |
+| `DataTablePagination` | “Showing X–Y of Z”, rows-per-page `Select` (10 / 25 / 50), first/prev/next/last |
+| `DataTableEmpty` | Centered empty state copy |
+| `useDataTablePaging` | Client-side page index, `rowsPerPage`, slice, clamp when data shrinks |
+| `useStickyActionsColumn` | Scroll tracking for a **sticky right “Actions”** column (pair with class helpers below) |
+| `dataTableShellClassName` | `Table` `className` for row borders + `border-separate` (horizontal scroll + sticky columns) |
+| `dataTableStickyActionsHeadClassName` / `dataTableStickyActionsCellClassName` | Sticky Actions header/cell (pass `stacked` from the hook) |
+| `dataTableActionIconButtonClassName` | Emerald-hover outline icon buttons in Actions |
+
+[`components/ui/table.tsx`](components/ui/table.tsx) **`Table`** forwards its `ref` to the scroll container `div`, so attach `ref={sticky.setTableScrollContainer}` for the sticky column behavior.
+
+The main worklist still uses [TanStack Table](https://tanstack.com/table) in [`components/worklist/worklist-table.tsx`](components/worklist/worklist-table.tsx); use the data-table module when you want the **invoice-style** layout and manual column markup instead of column defs.
 
 ## Tech Stack
 
@@ -199,9 +236,10 @@ workflow-template/
 │       └── settings/                     # Org settings, users, config
 ├── components/
 │   ├── layout/                           # Sidebar, Topbar
+│   ├── data-table/                       # Card + toolbar + pagination + sticky Actions helpers
 │   ├── ui/                               # shadcn/ui primitives
 │   ├── domain/                           # Status badge, priority badge, etc.
-│   └── worklist/                         # Filters, table
+│   └── worklist/                         # Filters, TanStack table
 ├── lib/
 │   ├── domain.config.ts                  # ★ Central domain configuration
 │   ├── types.ts                          # All TypeScript types
