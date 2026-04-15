@@ -1,7 +1,18 @@
 import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/api/kognitos-mock-role";
+import { getKognitosAutomationDetailsUrl } from "@/lib/kognitos/automation-details-url";
+import { getTotalRunsByAutomationShortId } from "@/lib/kognitos/client-core";
 import { supabaseAdmin } from "@/lib/supabase";
+
+function kognitosRemoteConfigured(): boolean {
+  return !!(
+    process.env.KOGNITOS_BASE_URL &&
+    (process.env.KOGNITOS_API_KEY || process.env.KOGNITOS_PAT) &&
+    (process.env.KOGNITOS_ORGANIZATION_ID || process.env.KOGNITOS_ORG_ID) &&
+    process.env.KOGNITOS_WORKSPACE_ID
+  );
+}
 
 export async function GET() {
   if (!supabaseAdmin) {
@@ -21,7 +32,25 @@ export async function GET() {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  return NextResponse.json({ automations: data ?? [] });
+
+  const automations = data ?? [];
+
+  let totalRunsByShortId = new Map<string, number>();
+  if (kognitosRemoteConfigured()) {
+    try {
+      totalRunsByShortId = await getTotalRunsByAutomationShortId();
+    } catch {
+      totalRunsByShortId = new Map();
+    }
+  }
+
+  const enriched = automations.map((a) => ({
+    ...a,
+    total_runs: totalRunsByShortId.get(String(a.automation_id)) ?? 0,
+    details_url: getKognitosAutomationDetailsUrl(String(a.automation_id)),
+  }));
+
+  return NextResponse.json({ automations: enriched });
 }
 
 type RegisterBody = {

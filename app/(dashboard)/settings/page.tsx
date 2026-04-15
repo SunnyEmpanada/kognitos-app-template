@@ -32,6 +32,8 @@ type AutomationRow = {
   display_name: string | null;
   description: string | null;
   resource_name: string | null;
+  total_runs: number;
+  details_url: string | null;
 };
 
 export default function SettingsPage() {
@@ -48,7 +50,17 @@ export default function SettingsPage() {
     try {
       const res = await fetch("/api/kognitos/automations");
       const json = (await res.json()) as { automations?: AutomationRow[] };
-      if (res.ok) setAutomations(json.automations ?? []);
+      if (res.ok)
+        setAutomations(
+          (json.automations ?? []).map((a) => ({
+            ...a,
+            total_runs: a.total_runs ?? 0,
+            details_url:
+              typeof a.details_url === "string" && a.details_url.length > 0
+                ? a.details_url
+                : null,
+          })),
+        );
     } finally {
       setLoadingAutos(false);
     }
@@ -143,9 +155,12 @@ export default function SettingsPage() {
                     id={`reg-${a.id}`}
                     title={a.display_name || a.automation_id}
                     description={a.description ?? undefined}
-                    moduleId={a.automation_id}
+                    automationId={a.automation_id}
+                    automationDetailsUrl={a.details_url}
+                    totalRunsCount={a.total_runs}
                     checked
                     locked
+                    showRegisteredHint={false}
                   />
                 ))}
               </div>

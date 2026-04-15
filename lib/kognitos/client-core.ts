@@ -5,6 +5,7 @@ import type {
   KognitosMetricResult,
   KognitosRun,
 } from "@/lib/types";
+import { automationShortIdFromResourceName } from "./automation-name";
 import { mapRunFromApiJson } from "./map-run";
 
 function orgId(): string {
@@ -173,7 +174,7 @@ export type RawAutomation = Record<string, unknown>;
 export async function listAutomationsRaw(options?: {
   pageSize?: number;
   pageToken?: string | null;
-  /** AIP-160 filter, e.g. `state = "PUBLISHED"` for List Automations. */
+  /** AIP-160 filter, e.g. `stage = "PUBLISHED"` for List Automations. */
   filter?: string;
 }): Promise<{
   automations: RawAutomation[];
@@ -252,20 +253,24 @@ export async function listRuns(options?: {
   const auto = resolveAutomationId(options?.automationId);
   const pageSize = Math.min(options?.pageSize ?? 100, 1000);
   const params = new URLSearchParams();
-  params.set("pageSize", String(pageSize));
-  if (options?.pageToken) params.set("pageToken", options.pageToken);
+  params.set("page_size", String(pageSize));
+  if (options?.pageToken) params.set("page_token", options.pageToken);
   if (options?.filter) params.set("filter", options.filter);
   const path = `/api/v1/organizations/${encodeURIComponent(org)}/workspaces/${encodeURIComponent(ws)}/automations/${encodeURIComponent(auto)}/runs?${params}`;
   const data = await kognitosFetchJson<{
     runs?: unknown[];
     nextPageToken?: string;
+    next_page_token?: string;
   }>(path);
   const runs = (data.runs ?? []).map((r) =>
     mapRunFromApiJson(r as Record<string, unknown>),
   );
+  const nextPageToken =
+    (typeof data.nextPageToken === "string" ? data.nextPageToken : null) ??
+    (typeof data.next_page_token === "string" ? data.next_page_token : null);
   return {
     runs,
-    nextPageToken: data.nextPageToken ?? null,
+    nextPageToken,
   };
 }
 
@@ -304,8 +309,8 @@ export async function listRunsRaw(options?: {
   const auto = resolveAutomationId(options?.automationId);
   const pageSize = Math.min(options?.pageSize ?? 100, 1000);
   const params = new URLSearchParams();
-  params.set("pageSize", String(pageSize));
-  if (options?.pageToken) params.set("pageToken", options.pageToken);
+  params.set("page_size", String(pageSize));
+  if (options?.pageToken) params.set("page_token", options.pageToken);
   if (options?.filter) params.set("filter", options.filter);
   const path = `/api/v1/organizations/${encodeURIComponent(org)}/workspaces/${encodeURIComponent(ws)}/automations/${encodeURIComponent(auto)}/runs?${params}`;
   const data = await kognitosFetchJson<Record<string, unknown>>(path);
@@ -396,6 +401,48 @@ export async function queryMetrics(options?: {
   return { results: mapMetricResults(raw) };
 }
 
+/** Short id for aggregate keys — API may return full resource name or short id. */
+function shortAutomationIdFromAggregateField(idField: string): string {
+  const s = idField.trim();
+  if (!s) return "";
+  return automationShortIdFromResourceName(s) ?? s;
+}
+
+function parseAutomationRunAggregateEntries(raw: Record<string, unknown>): {
+  automationId: string;
+  stats: { totalRuns: number; completedRuns: number };
+}[] {
+  const rawList =
+    (Array.isArray(raw.automation_run_aggregates)
+      ? raw.automation_run_aggregates
+      : null) ??
+    (Array.isArray(raw.automationRunAggregates)
+      ? raw.automationRunAggregates
+      : null) ??
+    [];
+  const out: {
+    automationId: string;
+    stats: { totalRuns: number; completedRuns: number };
+  }[] = [];
+  for (const item of rawList) {
+    const e = (item ?? {}) as Record<string, unknown>;
+    const idField = String(e.automation_id ?? e.automationId ?? "");
+    const shortId = shortAutomationIdFromAggregateField(idField);
+    const statsObj = (e.stats ?? {}) as Record<string, unknown>;
+    const totalRuns = num(
+      statsObj.total_runs ?? statsObj.totalRuns,
+    );
+    const completedRuns = num(
+      statsObj.completed_runs ?? statsObj.completedRuns,
+    );
+    out.push({
+      automationId: shortId || idField,
+      stats: { totalRuns, completedRuns },
+    });
+  }
+  return out;
+}
+
 export async function getAutomationRunAggregates(): Promise<{
   automationRunAggregates: {
     automationId: string;
@@ -405,21 +452,26 @@ export async function getAutomationRunAggregates(): Promise<{
   const org = requireOrg();
   const ws = requireWorkspace();
   const path = `/api/v1/organizations/${encodeURIComponent(org)}/workspaces/${encodeURIComponent(ws)}:automationRunAggregates`;
-  const raw = await kognitosFetchJson<{
-    automationRunAggregates?: {
-      automationId?: string;
-      stats?: { totalRuns?: unknown; completedRuns?: unknown };
-    }[];
-  }>(path);
+  const raw = await kognitosFetchJson<Record<string, unknown>>(path);
   return {
-    automationRunAggregates: (raw.automationRunAggregates ?? []).map((e) => ({
-      automationId: String(e.automationId ?? ""),
-      stats: {
-        totalRuns: num(e.stats?.totalRuns),
-        completedRuns: num(e.stats?.completedRuns),
-      },
-    })),
+    automationRunAggregates: parseAutomationRunAggregateEntries(raw),
   };
+}
+
+/**
+ * `stats.total_runs` per automation short id (QueryAutomationRunAggregates).
+ * One request for the workspace — use instead of paginating ListRuns for headline counts.
+ */
+export async function getTotalRunsByAutomationShortId(): Promise<
+  Map<string, number>
+> {
+  const { automationRunAggregates } = await getAutomationRunAggregates();
+  const map = new Map<string, number>();
+  for (const e of automationRunAggregates) {
+    if (!e.automationId) continue;
+    map.set(e.automationId, e.stats.totalRuns);
+  }
+  return map;
 }
 
 /**

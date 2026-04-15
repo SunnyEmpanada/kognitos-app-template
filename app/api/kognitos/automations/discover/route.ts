@@ -2,13 +2,22 @@ import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/api/kognitos-mock-role";
 import { automationShortIdFromResourceName } from "@/lib/kognitos/automation-name";
-import { listAllAutomationsRaw } from "@/lib/kognitos/client-core";
+import { getKognitosAutomationDetailsUrl } from "@/lib/kognitos/automation-details-url";
+import { isPublishedAutomationRaw } from "@/lib/kognitos/is-published-automation";
+import {
+  getTotalRunsByAutomationShortId,
+  listAllAutomationsRaw,
+} from "@/lib/kognitos/client-core";
 
 export type DiscoverAutomation = {
   automation_id: string;
   resource_name: string;
   display_name: string;
   description: string;
+  /** Remote Kognitos run count; 0 means the row cannot be selected. */
+  run_count: number;
+  /** Kognitos web UI link; null if org/workspace/app origin env is not set. */
+  details_url: string | null;
 };
 
 export async function POST(request: Request) {
@@ -30,10 +39,11 @@ export async function POST(request: Request) {
 
   try {
     const raw = await listAllAutomationsRaw({
-      filter: 'state = "PUBLISHED"',
+      filter: 'stage = "PUBLISHED"',
     });
-    const automations: DiscoverAutomation[] = [];
+    const base: Omit<DiscoverAutomation, "run_count" | "details_url">[] = [];
     for (const a of raw) {
+      if (!isPublishedAutomationRaw(a)) continue;
       const name = String(a.name ?? "");
       const shortId = automationShortIdFromResourceName(name);
       if (!shortId) continue;
@@ -47,13 +57,27 @@ export async function POST(request: Request) {
           : typeof a.english_code === "string"
             ? a.english_code
             : "";
-      automations.push({
+      base.push({
         automation_id: shortId,
         resource_name: name,
         display_name: displayName,
         description: desc,
       });
     }
+
+    let runTotals = new Map<string, number>();
+    try {
+      runTotals = await getTotalRunsByAutomationShortId();
+    } catch {
+      runTotals = new Map();
+    }
+
+    const automations: DiscoverAutomation[] = base.map((item) => ({
+      ...item,
+      run_count: runTotals.get(item.automation_id) ?? 0,
+      details_url: getKognitosAutomationDetailsUrl(item.automation_id),
+    }));
+
     return NextResponse.json({ automations });
   } catch (e) {
     const message = e instanceof Error ? e.message : "discover_failed";

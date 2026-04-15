@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { RefreshCw } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { kognitosDashboardFetch } from "@/lib/kognitos/kognitos-dashboard-fetch";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 import { WorkspaceAutomationListRow } from "./workspace-automation-list-row";
 
 export type DiscoverItem = {
@@ -20,6 +22,10 @@ export type DiscoverItem = {
   resource_name: string;
   display_name: string;
   description: string;
+  /** Remote Kognitos runs; selection is disabled when 0. */
+  run_count: number;
+  /** Kognitos UI details URL when server env can build it. */
+  details_url: string | null;
 };
 
 type Props = {
@@ -45,7 +51,8 @@ export function KognitosAutomationPickerDialog({
   const { user } = useAuth();
   const role = user?.role;
   const [step, setStep] = useState<1 | 2>(1);
-  const [loading, setLoading] = useState(false);
+  const [discoverLoading, setDiscoverLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [discoverError, setDiscoverError] = useState<string | null>(null);
   const [items, setItems] = useState<DiscoverItem[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -58,7 +65,7 @@ export function KognitosAutomationPickerDialog({
 
   const loadDiscover = useCallback(async () => {
     if (!role) return;
-    setLoading(true);
+    setDiscoverLoading(true);
     setDiscoverError(null);
     try {
       const res = await kognitosDashboardFetch("/api/kognitos/automations/discover", {
@@ -73,13 +80,35 @@ export function KognitosAutomationPickerDialog({
         setDiscoverError(json.error ?? `Request failed (${res.status})`);
         return;
       }
-      setItems(json.automations ?? []);
+      const mapped = (json.automations ?? []).map((a) => ({
+        ...a,
+        run_count:
+          typeof a.run_count === "number" && Number.isFinite(a.run_count)
+            ? a.run_count
+            : 0,
+        details_url:
+          typeof a.details_url === "string" && a.details_url.length > 0
+            ? a.details_url
+            : null,
+      }));
+      setItems(mapped);
+      setSelected((prev) => {
+        const next = new Set<string>();
+        const reg = registeredAutomationIds ?? new Set();
+        for (const id of prev) {
+          const row = mapped.find((m) => m.automation_id === id);
+          if (!row || row.run_count === 0) continue;
+          if (mode === "add" && reg.has(id)) continue;
+          next.add(id);
+        }
+        return next;
+      });
     } catch (e) {
       setDiscoverError(e instanceof Error ? e.message : "discover_failed");
     } finally {
-      setLoading(false);
+      setDiscoverLoading(false);
     }
-  }, [role]);
+  }, [role, mode, registeredAutomationIds]);
 
   useEffect(() => {
     if (open) {
@@ -90,6 +119,8 @@ export function KognitosAutomationPickerDialog({
   }, [open, loadDiscover]);
 
   function toggle(id: string, on: boolean) {
+    const row = available.find((i) => i.automation_id === id);
+    if (row && row.run_count === 0 && on) return;
     setSelected((prev) => {
       const next = new Set(prev);
       if (on) next.add(id);
@@ -100,10 +131,10 @@ export function KognitosAutomationPickerDialog({
 
   async function handleConfirm() {
     if (!role || selected.size === 0) return;
-    setLoading(true);
+    setSaving(true);
     try {
       const registrations = available
-        .filter((i) => selected.has(i.automation_id))
+        .filter((i) => selected.has(i.automation_id) && i.run_count > 0)
         .map((i) => ({
           automation_id: i.automation_id,
           resource_name: i.resource_name,
@@ -145,11 +176,11 @@ export function KognitosAutomationPickerDialog({
       onCompleted();
       onOpenChange?.(false);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   }
 
-  const canContinue = selected.size > 0 && !loading;
+  const canContinue = selected.size > 0 && !discoverLoading && !saving;
 
   return (
     <Dialog
@@ -169,11 +200,32 @@ export function KognitosAutomationPickerDialog({
           if (blocking) e.preventDefault();
         }}
       >
-        <DialogHeader className="space-y-2 border-b px-6 py-4">
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription className="sr-only">
-            Select automations to register for this app.
-          </DialogDescription>
+        <DialogHeader className="flex flex-row items-start justify-between gap-3 border-b px-6 py-4 space-y-0">
+          <div className="min-w-0 flex-1 space-y-2">
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription className="sr-only">
+              Select automations to register for this app.
+            </DialogDescription>
+          </div>
+          {step === 1 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0 gap-1.5"
+              disabled={discoverLoading || !role}
+              onClick={() => void loadDiscover()}
+              aria-label="Refresh automation list from Kognitos"
+            >
+              <RefreshCw
+                className={cn(
+                  "h-4 w-4",
+                  discoverLoading && "animate-spin",
+                )}
+              />
+              Refresh
+            </Button>
+          ) : null}
         </DialogHeader>
 
         {step === 1 ? (
@@ -182,12 +234,12 @@ export function KognitosAutomationPickerDialog({
               {discoverError ? (
                 <p className="px-4 text-sm text-destructive">{discoverError}</p>
               ) : null}
-              {loading && items.length === 0 && !discoverError ? (
+              {discoverLoading && items.length === 0 && !discoverError ? (
                 <p className="px-4 py-6 text-sm text-muted-foreground">
                   Loading automations…
                 </p>
               ) : null}
-              {!loading && available.length === 0 && !discoverError ? (
+              {!discoverLoading && available.length === 0 && !discoverError ? (
                 <p className="px-4 py-6 text-sm text-muted-foreground">
                   {mode === "add"
                     ? "No additional automations to add in this workspace."
@@ -202,7 +254,10 @@ export function KognitosAutomationPickerDialog({
                       id={`auto-${i.automation_id}`}
                       title={i.display_name || i.automation_id}
                       description={i.description || undefined}
-                      moduleId={i.automation_id}
+                      automationId={i.automation_id}
+                      automationDetailsUrl={i.details_url}
+                      totalRunsCount={i.run_count}
+                      disabled={i.run_count === 0}
                       checked={selected.has(i.automation_id)}
                       onCheckedChange={(c) => toggle(i.automation_id, c)}
                     />
@@ -240,17 +295,17 @@ export function KognitosAutomationPickerDialog({
               <Button
                 type="button"
                 variant="outline"
-                disabled={loading}
+                disabled={saving}
                 onClick={() => setStep(1)}
               >
                 Back
               </Button>
               <Button
                 type="button"
-                disabled={loading}
+                disabled={saving}
                 onClick={() => void handleConfirm()}
               >
-                {loading ? "Saving…" : "Confirm"}
+                {saving ? "Saving…" : "Confirm"}
               </Button>
             </DialogFooter>
           </>
