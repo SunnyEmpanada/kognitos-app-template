@@ -194,7 +194,7 @@ app-name/
 │       └── kognitos.ts                     # Mock runs, events, insights, metrics
 ├── supabase/
 │   └── migrations/
-│       └── [timestamp]_init.sql            # PostgreSQL schema (all tables, enums, RLS)
+│       └── [timestamp]_init_schema.sql     # PostgreSQL schema (all tables, enums, RLS)
 ├── scripts/
 │   └── seed.ts                             # Upserts mock data into Supabase
 ├── public/
