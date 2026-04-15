@@ -9,20 +9,40 @@ import { supabaseAdmin } from "@/lib/supabase";
 export async function GET() {
   if (!supabaseAdmin) {
     return NextResponse.json(
-      { setupComplete: false, error: "supabase_admin_missing" },
+      {
+        setupComplete: false,
+        needsKognitosRefresh: false,
+        error: "supabase_admin_missing",
+      },
       { status: 503 },
     );
   }
 
   try {
     await ensureAutomationFromEnv();
-    const { count, error } = await supabaseAdmin
-      .from("kognitos_automations")
-      .select("*", { count: "exact", head: true });
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    const [registered, stubs] = await Promise.all([
+      supabaseAdmin
+        .from("kognitos_automations")
+        .select("*", { count: "exact", head: true }),
+      supabaseAdmin
+        .from("kognitos_automations")
+        .select("*", { count: "exact", head: true })
+        .is("resource_name", null)
+        .is("display_name", null),
+    ]);
+    if (registered.error) {
+      return NextResponse.json(
+        { error: registered.error.message },
+        { status: 500 },
+      );
     }
-    return NextResponse.json({ setupComplete: (count ?? 0) > 0 });
+    if (stubs.error) {
+      return NextResponse.json({ error: stubs.error.message }, { status: 500 });
+    }
+    const setupComplete = (registered.count ?? 0) > 0;
+    /** Env-bootstrap rows (and any unfetched metadata) still need a Kognitos refresh. */
+    const needsKognitosRefresh = (stubs.count ?? 0) > 0;
+    return NextResponse.json({ setupComplete, needsKognitosRefresh });
   } catch (e) {
     const message = e instanceof Error ? e.message : "status_failed";
     return NextResponse.json({ error: message }, { status: 500 });

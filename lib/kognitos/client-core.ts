@@ -173,6 +173,8 @@ export type RawAutomation = Record<string, unknown>;
 export async function listAutomationsRaw(options?: {
   pageSize?: number;
   pageToken?: string | null;
+  /** AIP-160 filter, e.g. `state = "PUBLISHED"` for List Automations. */
+  filter?: string;
 }): Promise<{
   automations: RawAutomation[];
   nextPageToken: string | null;
@@ -183,6 +185,7 @@ export async function listAutomationsRaw(options?: {
   const params = new URLSearchParams();
   params.set("page_size", String(pageSize));
   if (options?.pageToken) params.set("page_token", options.pageToken);
+  if (options?.filter) params.set("filter", options.filter);
   const path = `/api/v1/organizations/${encodeURIComponent(org)}/workspaces/${encodeURIComponent(ws)}/automations?${params}`;
   const data = await kognitosFetchJson<Record<string, unknown>>(path);
   const raw = (data.automations ?? data.automation ?? []) as unknown[];
@@ -196,18 +199,32 @@ export async function listAutomationsRaw(options?: {
 }
 
 /** Paginate ListAutomations until all automations are loaded. */
-export async function listAllAutomationsRaw(): Promise<RawAutomation[]> {
+export async function listAllAutomationsRaw(options?: {
+  filter?: string;
+}): Promise<RawAutomation[]> {
   const out: RawAutomation[] = [];
   let pageToken: string | null = null;
+  const filter = options?.filter;
   do {
     const page = await listAutomationsRaw({
       pageSize: 100,
       pageToken,
+      filter,
     });
     out.push(...page.automations);
     pageToken = page.nextPageToken;
   } while (pageToken);
   return out;
+}
+
+/** GET …/workspaces/{ws}/automations/{automation_id} — raw automation resource. */
+export async function getAutomationRaw(
+  automationId: string,
+): Promise<Record<string, unknown>> {
+  const org = requireOrg();
+  const ws = requireWorkspace();
+  const path = `/api/v1/organizations/${encodeURIComponent(org)}/workspaces/${encodeURIComponent(ws)}/automations/${encodeURIComponent(automationId)}`;
+  return kognitosFetchJson<Record<string, unknown>>(path);
 }
 
 /** GET …/automations/{id}/runs/{runId} */

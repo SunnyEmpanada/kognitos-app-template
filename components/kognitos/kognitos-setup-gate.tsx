@@ -1,78 +1,86 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { AdminKognitosDataBlocking } from "./admin-kognitos-data-blocking";
+import { NonAdminKognitosSetupBlocking } from "./non-admin-kognitos-setup-blocking";
+
+type GateView =
+  | { type: "loading" }
+  | { type: "ok" }
+  | { type: "redirecting" }
+  | { type: "admin_sync" }
+  | { type: "non_admin"; variant: "no_automation" | "needs_sync" };
 
 /**
- * Redirects to onboarding (admin) or setup-pending (non-admin) until at least one
- * automation is registered in Supabase (after optional env bootstrap).
+ * Blocks the dashboard until Kognitos automations are registered and (when
+ * using env bootstrap) an initial sync has populated metadata and run data.
  */
 export function KognitosSetupGate({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
-  const [ready, setReady] = useState(false);
-  const [allowed, setAllowed] = useState(false);
+  const [view, setView] = useState<GateView>({ type: "loading" });
 
-  useEffect(() => {
+  const evaluate = useCallback(async (opts?: { silent?: boolean }) => {
+    await Promise.resolve();
     if (!user) {
-      setReady(true);
-      setAllowed(true);
+      setView({ type: "ok" });
       return;
     }
+    if (!opts?.silent) {
+      setView({ type: "loading" });
+    }
+    try {
+      const res = await fetch("/api/kognitos/automations/status");
+      const json = (await res.json()) as {
+        setupComplete?: boolean;
+        needsKognitosRefresh?: boolean;
+      };
 
-    let cancelled = false;
+      const setupComplete = Boolean(json.setupComplete);
+      const needsKognitosRefresh = Boolean(json.needsKognitosRefresh);
 
-    async function run() {
-      const u = user;
-      if (!u) return;
-      try {
-        const res = await fetch("/api/kognitos/automations/status");
-        const json = (await res.json()) as { setupComplete?: boolean };
-        if (cancelled) return;
-
-        if (json.setupComplete) {
-          setAllowed(true);
-          setReady(true);
-          return;
-        }
-
-        if (u.role === "admin") {
+      if (!setupComplete) {
+        if (user.role === "admin") {
           if (pathname?.startsWith("/onboarding/kognitos")) {
-            setAllowed(true);
+            setView({ type: "ok" });
           } else {
             router.replace("/onboarding/kognitos");
-            setAllowed(false);
+            setView({ type: "redirecting" });
           }
         } else {
-          if (pathname?.startsWith("/setup-pending")) {
-            setAllowed(true);
-          } else {
-            router.replace("/setup-pending");
-            setAllowed(false);
-          }
+          setView({ type: "non_admin", variant: "no_automation" });
         }
-        setReady(true);
-      } catch {
-        if (!cancelled) {
-          setAllowed(true);
-          setReady(true);
-        }
+        return;
       }
-    }
 
-    void run();
-    return () => {
-      cancelled = true;
-    };
+      if (needsKognitosRefresh) {
+        if (user.role === "admin") {
+          setView({ type: "admin_sync" });
+        } else {
+          setView({ type: "non_admin", variant: "needs_sync" });
+        }
+        return;
+      }
+
+      setView({ type: "ok" });
+    } catch {
+      setView({ type: "ok" });
+    }
   }, [user, pathname, router]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => void evaluate(), 0);
+    return () => clearTimeout(t);
+  }, [evaluate]);
 
   if (!user) {
     return <>{children}</>;
   }
 
-  if (!ready) {
+  if (view.type === "loading") {
     return (
       <div className="flex min-h-svh items-center justify-center bg-muted/30 text-muted-foreground">
         Loading…
@@ -80,11 +88,28 @@ export function KognitosSetupGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!allowed) {
+  if (view.type === "redirecting") {
     return (
       <div className="flex min-h-svh items-center justify-center bg-muted/30 text-muted-foreground">
         Redirecting…
       </div>
+    );
+  }
+
+  if (view.type === "admin_sync") {
+    return (
+      <AdminKognitosDataBlocking
+        onResolved={() => void evaluate({ silent: true })}
+      />
+    );
+  }
+
+  if (view.type === "non_admin") {
+    return (
+      <NonAdminKognitosSetupBlocking
+        variant={view.variant}
+        onRecheck={() => void evaluate()}
+      />
     );
   }
 

@@ -96,8 +96,8 @@ You can find these under Supabase **Project Settings → API**. If you use Verce
 **Kognitos API** (required for importing real runs from the Kognitos API):
 
 - `KOGNITOS_BASE_URL` — API base URL (no trailing slash)  
-- `KOGNITOS_API_KEY` *or* `KOGNITOS_PAT` — bearer token  
-- `KOGNITOS_ORGANIZATION_ID` or `KOGNITOS_ORG_ID` — organization id  
+- `KOGNITOS_API_KEY` — bearer token  
+- `KOGNITOS_ORGANIZATION_ID` — organization id  
 - `KOGNITOS_WORKSPACE_ID` — workspace id  
 - `KOGNITOS_AUTOMATION_ID` — **optional.** When set, the app can insert one registered automation at runtime on first status/sync so the **first-time onboarding dialog may be skipped**. When unset, an **admin** completes in-app onboarding to pick automations after deploy.
 
@@ -297,8 +297,8 @@ See **[docs/BLUEPRINT.md](docs/BLUEPRINT.md)** for the complete architecture doc
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key (browser) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key — seed, `/api/kognitos/*`; **never** expose in the browser or client bundles |
 | `KOGNITOS_BASE_URL` | Kognitos API base URL (no trailing slash) |
-| `KOGNITOS_API_KEY` or `KOGNITOS_PAT` | Bearer token for Kognitos API |
-| `KOGNITOS_ORGANIZATION_ID` or `KOGNITOS_ORG_ID` | Organization id |
+| `KOGNITOS_API_KEY` | Bearer token for Kognitos API |
+| `KOGNITOS_ORGANIZATION_ID` | Organization id |
 | `KOGNITOS_WORKSPACE_ID` | Workspace id |
 | `KOGNITOS_AUTOMATION_ID` | Automation whose runs are listed and stored |
 

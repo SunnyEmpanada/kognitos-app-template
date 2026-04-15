@@ -143,6 +143,7 @@ export default function SettingsPage() {
                     id={`reg-${a.id}`}
                     title={a.display_name || a.automation_id}
                     description={a.description ?? undefined}
+                    moduleId={a.automation_id}
                     checked
                     locked
                   />

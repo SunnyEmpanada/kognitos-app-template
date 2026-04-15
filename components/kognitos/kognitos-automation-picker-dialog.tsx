@@ -121,6 +121,27 @@ export function KognitosAutomationPickerDialog({
         window.alert(json.error ?? `Save failed (${res.status})`);
         return;
       }
+
+      const syncRes = await kognitosDashboardFetch("/api/kognitos/sync", {
+        method: "POST",
+        role,
+      });
+      const syncJson = (await syncRes.json().catch(() => ({}))) as {
+        message?: string;
+        error?: string;
+      };
+      if (!syncRes.ok) {
+        const msg =
+          syncJson.error === "no_automations_registered"
+            ? "No automations are registered yet. Complete onboarding (admin) or add automations in Settings, then try again."
+            : (syncJson.message ??
+              syncJson.error ??
+              `Kognitos sync failed (${syncRes.status})`);
+        window.alert(msg);
+      } else {
+        window.dispatchEvent(new Event("chat-data-changed"));
+      }
+
       onCompleted();
       onOpenChange?.(false);
     } finally {
@@ -181,6 +202,7 @@ export function KognitosAutomationPickerDialog({
                       id={`auto-${i.automation_id}`}
                       title={i.display_name || i.automation_id}
                       description={i.description || undefined}
+                      moduleId={i.automation_id}
                       checked={selected.has(i.automation_id)}
                       onCheckedChange={(c) => toggle(i.automation_id, c)}
                     />

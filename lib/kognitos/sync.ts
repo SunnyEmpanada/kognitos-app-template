@@ -2,7 +2,7 @@ import "server-only";
 
 import { supabaseAdmin } from "@/lib/supabase";
 import { ensureAutomationFromEnv } from "./ensure-automation-from-env";
-import { listAllRunsForAutomationRaw } from "./client-core";
+import { getAutomationRaw, listAllRunsForAutomationRaw } from "./client-core";
 import { getRunTimesFromPayload } from "./run-payload";
 import { reindexKognitosRunInputsForRun } from "./reindex-run-inputs";
 import { runShortIdFromName } from "./stage";
@@ -32,6 +32,47 @@ async function getLatestRunCreateTimeIsoForAutomation(
 
 function buildIncrementalCreateTimeFilter(lastCreateTimeIso: string): string {
   return `create_time >= "${lastCreateTimeIso}"`;
+}
+
+/**
+ * Fetches each registered automation from the Kognitos API and updates
+ * display metadata in Supabase (needed for env-bootstrap rows with null names).
+ */
+async function hydrateRegisteredAutomationsFromKognitos(): Promise<void> {
+  if (!supabaseAdmin) return;
+  const { data: rows, error } = await supabaseAdmin
+    .from("kognitos_automations")
+    .select("id, automation_id");
+  if (error || !rows?.length) return;
+
+  for (const row of rows) {
+    const automationId = String(row.automation_id);
+    try {
+      const raw = await getAutomationRaw(automationId);
+      const name = String(raw.name ?? "");
+      const displayName =
+        typeof raw.display_name === "string" && raw.display_name.trim()
+          ? raw.display_name
+          : automationId;
+      const desc =
+        typeof raw.description === "string" && raw.description
+          ? raw.description
+          : typeof raw.english_code === "string"
+            ? raw.english_code
+            : null;
+      const { error: upErr } = await supabaseAdmin
+        .from("kognitos_automations")
+        .update({
+          resource_name: name || null,
+          display_name: displayName,
+          description: desc,
+        })
+        .eq("id", row.id);
+      if (upErr) throw upErr;
+    } catch {
+      /* leave row for a later refresh if the API is unavailable */
+    }
+  }
 }
 
 export type KognitosRefreshResult = {
@@ -151,6 +192,8 @@ export async function runKognitosRefresh(): Promise<KognitosRefreshResult> {
       );
     }
   }
+
+  await hydrateRegisteredAutomationsFromKognitos();
 
   if (allInserted.length === 0) {
     return {

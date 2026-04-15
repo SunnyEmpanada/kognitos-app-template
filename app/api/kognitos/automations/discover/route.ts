@@ -29,7 +29,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const raw = await listAllAutomationsRaw();
+    const raw = await listAllAutomationsRaw({
+      filter: 'state = "PUBLISHED"',
+    });
     const automations: DiscoverAutomation[] = [];
     for (const a of raw) {
       const name = String(a.name ?? "");

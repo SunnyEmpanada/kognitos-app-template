@@ -8,6 +8,8 @@ export type WorkspaceAutomationRowProps = {
   id: string;
   title: string;
   description?: string;
+  /** Short automation module id (shown below description when set). */
+  moduleId?: string;
   checked?: boolean;
   onCheckedChange?: (checked: boolean) => void;
   disabled?: boolean;
@@ -18,6 +20,7 @@ export function WorkspaceAutomationListRow({
   id,
   title,
   description,
+  moduleId,
   checked,
   onCheckedChange,
   disabled,
@@ -48,6 +51,12 @@ export function WorkspaceAutomationListRow({
         </Label>
         {description ? (
           <p className="text-sm text-muted-foreground">{description}</p>
+        ) : null}
+        {moduleId ? (
+          <p className="text-xs text-muted-foreground">
+            <span className="font-sans">Module ID</span>{" "}
+            <span className="font-mono">{moduleId}</span>
+          </p>
         ) : null}
         {locked ? (
           <p className="text-xs text-muted-foreground">Registered</p>
